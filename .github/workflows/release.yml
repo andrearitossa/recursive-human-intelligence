@@ -1,0 +1,35 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - {os: windows-latest, name: RHI-windows-x64}
+          - {os: macos-latest, name: RHI-macos-arm64}
+          - {os: macos-13, name: RHI-macos-x64}
+          - {os: ubuntu-latest, name: RHI-linux-x64}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "25"}
+      - run: ./desktop/package.sh ${{ matrix.name }}
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: desktop/dist/${{ matrix.name }}.*
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {merge-multiple: true}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: RHI-*

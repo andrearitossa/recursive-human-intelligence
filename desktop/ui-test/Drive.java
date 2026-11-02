@@ -245,6 +245,10 @@ public class Drive {
     if(l.tray!=null){WindowEventHelper.close(l.frame);pause(300);ok(!l.frame.isVisible(),"close hides to tray");ui(l::reveal);pause(300);ok(l.frame.isVisible(),"tray Open restores");}else System.out.println("  note tray unsupported");
     ok(l.settingsFile.toFile().exists()&&!Files.readString(l.settingsFile).contains("oa-key")&&!Files.readString(l.settingsFile).contains("sk-ant"),"keys never written to settings");
 
+    System.out.println("Key storage");
+    if(KeyStore.available()){ok(KeyStore.save("rhi-check","sk-roundtrip-123"),"key saved");ok(KeyStore.load("rhi-check").equals("sk-roundtrip-123"),"key read back");
+      Path enc=home.resolve(".loop/keys/rhi-check.dpapi");if(Files.exists(enc))ok(!Files.readString(enc).contains("sk-roundtrip"),"key is encrypted on disk");
+      KeyStore.delete("rhi-check");ok(KeyStore.load("rhi-check").isEmpty(),"key deleted");}
     System.out.println("Add folders");
     Path custom=home.resolve("extra");Files.createDirectories(custom);Files.writeString(custom.resolve("x.jsonl"),u("x1","custom folder request about something"));
     ui(()->l.select("Chats"));press(l.frame,"Add folder");pause(900);JDialog ad=dialog(null);JFileChooser afc=(JFileChooser)ad.getContentPane().getComponent(0);ui(()->afc.setSelectedFile(custom.toFile()));later(afc::approveSelection);pause(300);idle();

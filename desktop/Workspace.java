@@ -26,6 +26,9 @@ final class Workspace extends JPanel {
     final JCheckBox consent=new JCheckBox("Allow selected chat excerpts to be sent to this provider"),schedule=new JCheckBox("Check for new chats every 5 minutes while RHI runs"),notify=new JCheckBox("Desktop notifications"),codex=new JCheckBox("Codex"),claude=new JCheckBox("Claude"),pi=new JCheckBox("Pi"),cross=new JCheckBox("Also look in other Windows / WSL profiles");
     final JButton test=Ui.button("Test connection"),manage=Ui.button("Added folders"),forget=Ui.button("Delete history");
     final Map<Models.Provider,String> sessionKeys=new EnumMap<>(Models.Provider.class);
+    final JCheckBox remember=new JCheckBox("Keep my key safe on this computer",true);
+    final JButton forgetKey=Ui.button("Forget saved key");
+    private final Map<Models.Provider,String> stored=new EnumMap<>(Models.Provider.class);
     Models.Provider shownProvider;
     SwingWorker<?,?> job;
     volatile Thread workerThread;
@@ -81,11 +84,14 @@ final class Workspace extends JPanel {
     /** The model connection, asking for whatever is missing right here instead of sending anyone to Settings. */
     Models.Model connectOrAsk(){
         try{Models.Model ready=connection();if(ready!=null)return ready;}catch(Exception ignored){}
+        // The saved key may still be loading right after launch.
+        Models.Provider current=(Models.Provider)provider.getSelectedItem();
+        if(secret(current).isBlank()){String saved=KeyStore.load(current.name());if(!saved.isEmpty()){stored.put(current,saved);sessionKeys.put(current,saved);if(shownProvider==current)key.setText(saved);try{Models.Model ready=connection();if(ready!=null)return ready;}catch(Exception ignored){}}}
         JComboBox<Models.Provider> pick=new JComboBox<>(Models.Provider.values());pick.setSelectedItem(provider.getSelectedItem());pick.setBackground(Color.WHITE);
         JTextField id=Ui.field(new JTextField(model.getText(),28));JPasswordField secret=Ui.field(new JPasswordField(new String(key.getPassword()),28));
         JCheckBox allow=new JCheckBox("Send my chat excerpts to this provider",consent.isSelected());allow.setOpaque(false);
         pick.addActionListener(e->{Models.Provider p=(Models.Provider)pick.getSelectedItem();id.setText(host.settings.getProperty("model."+p.name(),""));secret.setText(sessionKeys.getOrDefault(p,""));});
-        Object[] form={"RHI uses your own AI account to read your chats.",new JLabel("Provider"),pick,new JLabel("Model ID"),id,new JLabel("API key (not saved)"),secret,allow};
+        Object[] form={"RHI uses your own AI account to read your chats.",new JLabel("Provider"),pick,new JLabel("Model ID"),id,new JLabel("API key (kept safe by your system)"),secret,allow};
         String[] options={"Connect","Local tools only","Cancel"};
         while(true){
             int choice=JOptionPane.showOptionDialog(host.frame,form,"Connect your AI",JOptionPane.DEFAULT_OPTION,JOptionPane.PLAIN_MESSAGE,null,options,options[0]);
@@ -301,8 +307,8 @@ final class Workspace extends JPanel {
         excluded.setText(host.settings.getProperty("excluded",""));
         Ui.Stack form=new Ui.Stack();form.setBorder(new EmptyBorder(0,0,16,14));
         form.put(Ui.section("Model"));
-        field(form,"Provider",provider);field(form,"Model ID",model);field(form,"API key (not saved)",key);form.put(keyHint,4);field(form,"Endpoint",endpoint);
-        form.put(check(consent),10);form.put(Ui.row(test),10);
+        field(form,"Provider",provider);field(form,"Model ID",model);field(form,"API key",key);form.put(keyHint,4);form.put(check(remember),4);field(form,"Endpoint",endpoint);
+        form.put(check(consent),10);form.put(Ui.row(test,forgetKey),10);
         form.put(Ui.section("Sources"),26);form.put(Ui.row(check(codex),check(claude),check(pi)),6);form.put(check(cross),4);
         JLabel excludeLabel=new JLabel("Skip these project folders, one per line");excludeLabel.setBorder(new EmptyBorder(12,0,5,0));form.put(excludeLabel);
         excluded.setMargin(new Insets(6,8,6,8));JScrollPane excludedScroll=new JScrollPane(excluded);excludedScroll.setBorder(new LineBorder(Ui.LINE));form.put(excludedScroll);
@@ -310,6 +316,10 @@ final class Workspace extends JPanel {
         form.put(Ui.section("Background"),26);form.put(check(schedule),6);form.put(check(notify),2);form.put(Ui.row(pause),8);
         form.put(Ui.section("Your data"),26);form.put(Ui.row(forget),8);form.end();
         pause.addActionListener(e->togglePause());
+        remember.setSelected(flag("rememberKey","true"));remember.addActionListener(e->autosave());
+        forgetKey.addActionListener(e->{Models.Provider p=(Models.Provider)provider.getSelectedItem();sessionKeys.remove(p);stored.remove(p);key.setText("");new Thread(()->KeyStore.delete(p.name())).start();Activity.log("Saved key removed for "+p);host.status.setText("Saved key removed.");updateKeyHint();});
+        Models.Provider startup=shownProvider;
+        new Thread(()->{String saved=KeyStore.load(startup.name());if(!saved.isEmpty())SwingUtilities.invokeLater(()->{stored.put(startup,saved);if(sessionKeys.getOrDefault(startup,"").isBlank())sessionKeys.put(startup,saved);if(shownProvider==startup&&key.getPassword().length==0)key.setText(saved);updateKeyHint();Activity.log("Loaded your saved key for "+startup);});}).start();
         for(JCheckBox box:List.of(consent,schedule,notify,codex,claude,pi,cross))box.addActionListener(e->autosave());
         java.awt.event.FocusAdapter onLeave=new java.awt.event.FocusAdapter(){@Override public void focusLost(java.awt.event.FocusEvent e){autosave();}};
         for(JComponent field:List.of(endpoint,model,key,excluded))field.addFocusListener(onLeave);
@@ -336,10 +346,12 @@ final class Workspace extends JPanel {
     private static JCheckBox check(JCheckBox box){box.setOpaque(false);box.setBorder(new EmptyBorder(2,0,2,10));return box;}
     private static void field(Ui.Stack form,String label,JComponent input){JLabel l=new JLabel(label);l.setBorder(new EmptyBorder(12,0,5,0));form.put(l);if(input instanceof javax.swing.text.JTextComponent t)Ui.field(t);else input.setBackground(Color.WHITE);form.put(input);}
     void loadProvider(Models.Provider p){shownProvider=p;endpoint.setText(host.settings.getProperty("endpoint."+p.name(),p.endpoint));model.setText(host.settings.getProperty("model."+p.name(),""));key.setText(sessionKeys.getOrDefault(p,""));updateKeyHint();}
-    private void updateKeyHint(){Models.Provider p=shownProvider;keyHint.setText(System.getenv(p.keyEnv)!=null?"Using "+p.keyEnv+" unless you paste a key.":"Or set "+p.keyEnv+" to avoid pasting it each time.");}
+    private void updateKeyHint(){Models.Provider p=shownProvider;keyHint.setText(System.getenv(p.keyEnv)!=null?"Using "+p.keyEnv+" unless you paste a key.":"Encrypted by "+KeyStore.name()+" if kept. Never written to RHI's settings.");}
     void persistForm()throws IOException{
         excludedPaths();host.settings.setProperty("excluded",excluded.getText());
-        Models.Provider p=(Models.Provider)provider.getSelectedItem();sessionKeys.put(p,new String(key.getPassword()));
+        Models.Provider p=(Models.Provider)provider.getSelectedItem();String typed=new String(key.getPassword());sessionKeys.put(p,typed);
+        host.settings.setProperty("rememberKey",Boolean.toString(remember.isSelected()));
+        if(remember.isSelected()&&!typed.isBlank()&&!typed.equals(stored.get(p))){stored.put(p,typed);new Thread(()->Activity.log(KeyStore.save(p.name(),typed)?"Key encrypted by "+KeyStore.name():"Could not reach "+KeyStore.name()+": the key stays in memory only")).start();}
         host.settings.setProperty("provider",p.name());host.settings.setProperty("endpoint."+p.name(),endpoint.getText().strip());host.settings.setProperty("model."+p.name(),model.getText().strip());
         host.settings.setProperty("consent",Boolean.toString(consent.isSelected()));host.settings.setProperty("schedule",Boolean.toString(schedule.isSelected()));host.settings.setProperty("notifications",Boolean.toString(notify.isSelected()));host.settings.setProperty("cross",Boolean.toString(cross.isSelected()));
         for(String tool:List.of("Codex","Claude","Pi"))host.settings.setProperty("source."+tool,Boolean.toString(enabled(tool)));

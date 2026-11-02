@@ -1,18 +1,46 @@
 # RHI: Recursive Human Intelligence
 
-AI improves itself recursively. Why shouldn't you?
+**AI improves itself recursively. Why shouldn't you?**
 
-RHI reads your chats with AI assistants and hands you feedback, sources, and tools so the same questions stop coming back.
+RHI reads your chats with Claude Code, Codex, and Pi, then hands you honest feedback, sources, and sharper habits, so the same questions stop coming back.
 
-## Start on Windows
+![RHI finding patterns and writing feedback](docs/demo.gif)
 
-Requires JDK 17+. The launcher finds an installed JDK even when an older Java comes first on PATH. In PowerShell:
+*Demo with a fictional user and made-up chats.*
 
-```powershell
-& "\\wsl.localhost\Ubuntu\home\andrea\rpi\desktop\start.bat"
+## Install
+
+No Java needed. Each build includes its own runtime.
+
+**macOS and Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/andrearitossa/recursive-human-intelligence/main/install.sh | sh
 ```
 
-Or launch `desktop/start.bat` from your checkout. It compiles all sources, runs local checks, and opens Loop. UNC/WSL folders are handled with `pushd`. On Linux/WSL with a graphical desktop, use `./desktop/start.sh`.
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/andrearitossa/recursive-human-intelligence/main/install.ps1 | iex
+```
+
+Builds are not code signed yet, so your system may warn you the first time. You can read both install scripts first; they install only for your user.
+
+You need your own OpenAI, Claude, or OpenRouter API key.
+
+| Your patterns | Your feedback |
+|---|---|
+| ![Pattern map](docs/patterns.png) | ![Feedback list](docs/feedback.png) |
+
+![Feedback detail with a sharper version of a request](docs/detail.png)
+
+## What leaves your computer
+
+- Transcripts are read locally and never changed. Imported history stays in `.loop` in your home folder.
+- **Get feedback** sends your request text, cut to 1,000 characters each, to the provider you choose, using your key. It asks first and states the amount.
+- Obvious credentials are removed before sending, but names and other personal details in your messages can remain. To limit this, remove chats on **Chats** or skip project folders in **Settings**.
+- Import also looks in other Windows and WSL user profiles on your computer that you can access. Turn this off in **Settings** under **Sources**.
+- Your API key is encrypted by Windows, your macOS Keychain, or your Linux keyring (`secret-tool`). If none is available, it stays in memory for that session.
 
 ## Use it
 
@@ -35,7 +63,7 @@ Settings supports three providers through one model interface:
 | Claude | `https://api.anthropic.com/v1/messages` | `ANTHROPIC_API_KEY` |
 | OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | `OPENROUTER_API_KEY` |
 
-Enter a model ID available to your account. Paste a session key or set the corresponding environment variable before launching. Keys are never written to settings. Click **Test connection** and enable consent to send selected excerpts. Settings save themselves. Testing sends a small test prompt, not chat history. Custom endpoints require HTTPS, except localhost development endpoints.
+Enter a model ID available to your account. Paste a key or set the environment variable. Keys are never written to settings. **Forget saved key** in Settings removes a stored key. Click **Test connection** and enable consent to send selected excerpts. Settings save themselves. Testing sends a small test prompt, not chat history. Custom endpoints require HTTPS, except localhost development endpoints.
 
 Analysis samples at most 80 user excerpts / 45,000 text characters per call. Obvious credentials are redacted and session names replaced with anonymous codes before sending. Evidence must reference actual sampled requests from three distinct sessions. The app rejects invalid output and unsupported operations. Archived topics and similar titles are suppressed. Feedback and generated content are stored separately and are never imported as evidence.
 
@@ -66,3 +94,11 @@ The command returns JSON with title, description, version, and a standalone arti
 The Windows launcher runs the same checks: transcript formats, harness-text filtering, project exclusions, deduplication, cancellation, persistence, provider formats, evidence validation, cooldowns, feedback, revision and restore, CSV delimiters and encodings, redaction, and artifact escaping.
 
 `desktop/ui-test/run.sh Drive` runs RHI's real window end to end from WSL with the Windows JDK: real controls, a throwaway home, and a fake local provider. It opens the window off-screen and draws only RHI's own components to images. `RealImport` reports counts from real transcripts without printing their text.
+
+## Build from source
+
+Requires JDK 17+. `desktop/start.bat` or `desktop/start.sh` compiles, runs checks, and opens the app. `desktop/package.sh NAME` builds a self-contained package. Pushing a `v*` tag builds and publishes releases for every platform.
+
+## License
+
+Free to use, change, and sell, as long as you clearly credit **Andrea Ritossa**. See [LICENSE](LICENSE).

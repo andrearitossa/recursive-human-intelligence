@@ -152,7 +152,7 @@ final class PatternsPage extends JPanel {
         },out->{
             int[] outcome=(int[])out;int count=outcome[0];
             if(deep&&outcome[1]==1){host.settings.setProperty("feedback.over",signature);try{host.saveSettings();}catch(Exception e){Activity.log("✕ could not save settings");}}
-            host.status.setText(count==0?"Nothing new to say.":count+(count==1?" new item.":" new items.")+(deep&&outcome[1]==1?" That is everything from these chats.":""));Activity.log("Feedback done: "+count+" items");
+            host.status.setText(count==0?"Nothing new to say.":count+(count==1?" new item.":" new items.")+(deep&&outcome[1]==1?" That is all for now.":""));Activity.log("Feedback done: "+count+" items");
             renderReports();
         });
         host.workspace.scrollHomeToTop();
