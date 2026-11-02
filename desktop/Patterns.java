@@ -55,6 +55,25 @@ final class Patterns {
         for(var e:requests.entrySet())if(seen.add(e.getValue().text().strip().replaceAll("\\s+"," ").toLowerCase(Locale.ROOT)))out.add(new Item(e.getKey(),e.getValue(),mode(e.getValue().text())));
         return out;
     }
+    private static final Set<String> GRAMMAR=Set.of("i","a","an","to","in","of","on","at","is","or","as","be","by","we","my","me","so","if","do","would","like","point","terms");
+    /** How they phrase things, measured locally: wording retyped across chats is a standing instruction nobody saved. */
+    static Map<String,Object> signals(Map<String,ChatEngine.Request> requests){
+        List<Item> items=distinct(requests);int shortOnes=0;List<Integer> lengths=new ArrayList<>();Map<String,Set<String>> phrases=new HashMap<>();
+        for(Item i:items){
+            String text=i.request().text().strip().toLowerCase(Locale.ROOT);String[] words=text.split("\\s+");lengths.add(words.length);if(words.length<=6)shortOnes++;
+            String[] clean=text.substring(0,Math.min(600,text.length())).replaceAll("[^\\p{L}' ]+"," | ").split("\\s+");
+            for(int n=3;n<=5;n++)for(int w=0;w+n<=clean.length;w++){
+                List<String> gram=Arrays.asList(clean).subList(w,w+n);if(gram.contains("|")||STOP.contains(gram.get(0))||STOP.contains(gram.get(n-1))||GRAMMAR.contains(gram.get(0))||GRAMMAR.contains(gram.get(n-1)))continue;
+                phrases.computeIfAbsent(String.join(" ",gram),k->new HashSet<>()).add(i.request().session());
+            }
+        }
+        Collections.sort(lengths);
+        List<Map.Entry<String,Set<String>>> top=new ArrayList<>(phrases.entrySet());top.removeIf(e->e.getValue().size()<4);top.sort((a,b)->b.getValue().size()-a.getValue().size());
+        List<String> repeated=new ArrayList<>();
+        // A phrase inside a longer one already listed adds nothing.
+        for(var e:top){if(repeated.size()==25)break;if(repeated.stream().noneMatch(r->r.contains(e.getKey())))repeated.add(e.getKey()+" ("+e.getValue().size()+" chats)");}
+        Map<String,Object> out=new LinkedHashMap<>();out.put("requests",items.size());out.put("medianWords",lengths.isEmpty()?0:lengths.get(lengths.size()/2));out.put("percentSixWordsOrFewer",items.isEmpty()?0:100*shortOnes/items.size());out.put("phrasesRetypedAcrossChats",repeated);return out;
+    }
     static Result analyze(Map<String,ChatEngine.Request> requests){
         List<Item> items=new ArrayList<>();Map<Mode,Integer> modes=new EnumMap<>(Mode.class);Set<String> sessions=new HashSet<>();
         // A forked or resumed chat replays old messages. Counted once, or a copy would look like recurrence.

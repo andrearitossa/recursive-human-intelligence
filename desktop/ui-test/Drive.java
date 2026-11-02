@@ -41,9 +41,9 @@ public class Drive {
     if(input.startsWith("Connection"))return "OK";
     Map<?,?> in=Json.map(Json.parse(input));
     if(in.containsKey("messages")){List<Object> out=new ArrayList<>();for(Object o:(List<?>)in.get("messages")){Map<?,?> x=Json.map(o);String t=Json.text(x.get("text"));boolean c=t.contains("CSV"),st=t.contains("standup");out.add(Map.of("ref",x.get("ref"),"task",c?"Clean report CSV":st?"Write standup notes":"Other request","mode","build","area",c?"Data & ML":st?"Writing & career":"Personal & other","friction",false));}return Json.write(Map.of("items",out));}
-    if(in.containsKey("tasks")){List<String> c=new ArrayList<>(),st=new ArrayList<>();for(Object t:(List<?>)in.get("tasks")){String x=Json.text(t);if(x.contains("CSV"))c.add(x.split(":")[0]);if(x.contains("standup"))st.add(x.split(":")[0]);}return Json.write(Map.of("patterns",List.of(Map.of("name","Cleans report CSVs","description","Keeps coming back.","friction",false,"refs",c),Map.of("name","Drafts standup notes","description","Keeps coming back.","friction",false,"refs",st))));}
-    if(in.containsKey("patterns")){List<String> refs=new ArrayList<>();for(Object p:(List<?>)in.get("patterns"))for(Object x:(List<?>)Json.map(p).get("excerpts"))refs.add(Json.text(Json.map(x).get("ref")));
-      return Json.write(Map.of("findings",List.of(Map.of("problem","You re-explain the same report cleanup in every chat, because no chat remembers it.","rootCause","The cleanup rules live only in your messages, so each new session starts from zero.","confidence","high","evidence",refs.subList(0,2),"suggestions",List.of(Map.of("type","workflow","title","Report cleanup instruction","why","One saved instruction replaces the repeated explanation.","firstStep","Add to CLAUDE.md: when given a report CSV, trim cells and drop empty rows.","steps",List.of("Use it on the next report"),"payoff","No more re-explaining."),Map.of("type","learn","title","pandas dropna and strip","why","Two calls cover nearly all of it.","firstStep","Run df.dropna(how='all') on last week's report.","steps",List.of(),"payoff","Done without asking."))))));}
+    if(in.containsKey("tasks")&&!in.containsKey("previouslyTold")){List<String> c=new ArrayList<>(),st=new ArrayList<>();for(Object t:(List<?>)in.get("tasks")){String x=Json.text(t);if(x.contains("CSV"))c.add(x.split(":")[0]);if(x.contains("standup"))st.add(x.split(":")[0]);}return Json.write(Map.of("patterns",List.of(Map.of("name","Cleans report CSVs","description","Keeps coming back.","friction",false,"refs",c),Map.of("name","Drafts standup notes","description","Keeps coming back.","friction",false,"refs",st))));}
+    if(in.containsKey("previouslyTold")){List<String> refs=new ArrayList<>();for(Object t:(List<?>)in.get("tasks"))refs.add(Json.text(t).split(":")[0]);boolean again=!((List<?>)in.get("previouslyTold")).isEmpty();
+      return Json.write(Map.of("items",List.of(Map.of("name",again?"Second item":"Report cleanup","description","A short line for you.","message","You re-explain the same report cleanup in every chat.","you","clean the empty rows","better","Drop empty rows and trim cells in this file, then show me the row count before and after.","actions",List.of(Map.of("text","Read chapter one this week.","source","Python for Data Analysis")),"evidence",refs.subList(0,2)),Map.of("name",again?"Third item":"Standup habit","description","Another short line.","message","More.","actions",List.of(Map.of("text","Try it.","source","")),"evidence",refs.subList(0,2)))));}
     if(in.containsKey("feedback"))return "```json\n"+Json.write(Map.of("content","Better: also removes duplicates.","steps",List.of("Paste","Preview"),"quiz",List.of(),"operations",List.of(Map.of("type","trim"),Map.of("type","deduplicate"))))+"\n```";
     if(mode.equals("none"))return "{\"opportunity\":null}";
     if(mode.equals("garbage"))return "I think you should relax.";
@@ -60,6 +60,13 @@ public class Drive {
       try{if(mode.equals("slow"))Thread.sleep(20000);}catch(InterruptedException e){}
       int code=mode.equals("401")?401:mode.equals("429")?429:200;String reply;
       try{String text=code==200?opportunity(body):"no";reply=x.getRequestURI().getPath().contains("messages")?Json.write(Map.of("content",List.of(Map.of("type","text","text",text)))):Json.write(Map.of("choices",List.of(Map.of("message",Map.of("content",text)))));}catch(Exception e){code=500;reply=e.toString();}
+      if(code==200&&body.contains("\"stream\":true")){
+        // Real server-sent chunks, so the tested path is the one a provider uses.
+        boolean claude=x.getRequestURI().getPath().contains("messages");String text=claude?Json.text(Json.map(((List<?>)Json.map(Json.parse(reply)).get("content")).get(0)).get("text")):Json.text(Json.map(Json.map(((List<?>)Json.map(Json.parse(reply)).get("choices")).get(0)).get("message")).get("content"));
+        x.getResponseHeaders().set("Content-Type","text/event-stream");x.sendResponseHeaders(200,0);var out=x.getResponseBody();
+        try{for(int at=0;at<text.length();at+=40){String piece=text.substring(at,Math.min(text.length(),at+40));String line=claude?Json.write(Map.of("type","content_block_delta","delta",Map.of("text",piece))):Json.write(Map.of("choices",List.of(Map.of("delta",Map.of("content",piece)))));out.write(("data: "+line+"\n\n").getBytes(StandardCharsets.UTF_8));out.flush();if(mode.equals("drip"))Thread.sleep(250);}out.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));}catch(Exception gone){}
+        x.close();return;
+      }
       byte[] b=reply.getBytes(StandardCharsets.UTF_8);x.sendResponseHeaders(code,b.length);x.getResponseBody().write(b);x.close();
     });s.start();return s.getAddress().getPort();
   }
@@ -87,8 +94,8 @@ public class Drive {
 
     Loop.main(new String[0]);while(Loop.instance==null)pause(100);l=Loop.instance;ui(()->{l.frame.setFocusableWindowState(false);l.frame.setLocation(-4000,-4000);});pause(500);
     System.out.println("Home, empty");
-    ok(allText(l.workspace).contains("Keep working. Loop will look for ways to make it easier."),"spec empty-state text");shot("01-empty");
-    ui(()->l.workspace.analyze.doClick());pause(200);ok(status().contains("Import your chats first"),"Find before import explains next step: "+status());
+    ok(allText(l.workspace).contains("Keep working. RHI will look for ways to make it easier."),"spec empty-state text");ok(find(l.workspace,"Get feedback")!=null,"empty Home offers the one action");ok(l.frame.getTitle().startsWith("RHI"),"app is named RHI");shot("01-empty");
+    ui(()->l.workspace.analyze(true));pause(200);ok(status().contains("Import your chats first"),"Find before import explains next step: "+status());
 
     System.out.println("Exclusions");
     ui(()->{l.workspace.excluded.setText("relative/path");l.select("Chats");});later(l.scan::doClick);pause(300);
@@ -115,7 +122,7 @@ public class Drive {
     ui(()->l.chatSearch.setText("NUMBER 1"));pause(100);ok(l.table.getRowCount()==1,"chat search filters");ui(()->l.chatSearch.setText(""));
 
     System.out.println("Curated solution");
-    ui(()->{l.select("Home");l.workspace.analyze.doClick();});idle();
+    ui(()->{l.select("Home");l.workspace.analyze(true);});idle();
     ok(l.workspace.store.tools.size()==1&&l.workspace.store.tools.get(0).kind.equals("csv"),"CSV cleaner created locally: "+status());
     ok(allText(l.workspace).contains("NEW"),"new solution is featured");shot("03-home-tool");
     Solutions.Tool csv=l.workspace.store.tools.get(0);
@@ -128,8 +135,8 @@ public class Drive {
     ui(()->prev.getTransferHandler().importData(new TransferHandler.TransferSupport(prev,tr)));
     ok(prev.getText().equals("nome;città;note\nAndrea;Forlì;\"a;b\"\nLuca;Roma;ok"),"drag-and-drop: ANSI + semicolon cleaned: "+prev.getText().replace('\n','|'));
     shot("04-csv",cd);
-    AbstractButton sv=find(cd,"Save copy");later(sv::doClick);pause(900);
-    JDialog ch=null;for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing()&&d!=cd)ch=d;
+    AbstractButton sv=find(cd,"Save copy");later(sv::doClick);
+    JDialog ch=null;for(int wait=0;wait<100&&ch==null;wait++){pause(100);for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing()&&d!=cd&&((JDialog)w).getContentPane().getComponentCount()>0&&((JDialog)w).getContentPane().getComponent(0) instanceof JFileChooser)ch=d;}
     JFileChooser fc=(JFileChooser)ch.getContentPane().getComponent(0);ok(fc.getSelectedFile().getName().equals("italian report-clean.csv"),"save suggests -clean name");
     later(fc::approveSelection);pause(600);
     Path outFile=home.resolve("italian report-clean.csv");ok(Files.exists(outFile)&&Files.readString(outFile).startsWith("nome;città;note\r\n"),"cleaned copy saved");
@@ -146,7 +153,7 @@ public class Drive {
     closeAll();ui(()->l.workspace.details(csv));td=dialog(csv.title);press(td,"Archive");pause(200);ok(csv.archived&&!allText(l.workspace).contains(csv.title),"Archive hides from library");
     ui(()->{l.select("Home");l.workspace.archived.doClick();});pause(100);ok(allText(l.workspace).contains(csv.title),"visible under archived");
     ui(()->l.workspace.archived.doClick());
-    ui(()->l.workspace.analyze.doClick());idle();ok(l.workspace.store.tools.size()==1,"archived topic not re-suggested");
+    ui(()->l.workspace.analyze(true));idle();ok(l.workspace.store.tools.size()==1,"archived topic not re-suggested");
     ui(()->l.workspace.details(csv));td=dialog(csv.title);press(td,"Restore");pause(150);ok(!csv.archived,"restored");
     ui(()->l.workspace.search.setText("zzz"));pause(100);ok(allText(l.workspace).contains("No solutions match"),"search empty message");ui(()->l.workspace.search.setText("REPORT"));pause(100);ok(allText(l.workspace).contains(csv.title),"search is case-insensitive");ui(()->l.workspace.search.setText(""));
 
@@ -166,16 +173,16 @@ public class Drive {
 
     System.out.println("Consent and analysis");
     int before=seen.size();
-    ui(()->{l.select("Home");l.workspace.analyze.doClick();});idle();ok(seen.size()==before,"no consent: nothing sent to provider");
+    ui(()->{l.select("Home");l.workspace.analyze(true);});idle();ok(seen.size()==before,"no consent: nothing sent to provider");
     ui(()->{l.workspace.consent.setSelected(true);});
     // secrets + filtered sample
     ChatEngine.Request sec=new ChatEngine.Request("s9","my key is sk-abcdefghijklmnopqrstuvwx please use it");ui(()->l.engine.requests.put(ChatEngine.id(sec),sec));
-    for(String bad2:List.of("garbage","invented","script")){mode=bad2;int n=l.workspace.store.tools.size();later(l.workspace.analyze::doClick);m=dismiss("OK");idle();ok(l.workspace.store.tools.size()==n,bad2+" rejected: "+m.strip());}
+    for(String bad2:List.of("garbage","invented","script")){mode=bad2;int n=l.workspace.store.tools.size();later(()->l.workspace.analyze(true));m=dismiss("OK");idle();ok(l.workspace.store.tools.size()==n,bad2+" rejected: "+m.strip());}
     String sent=seen.get(seen.size()-1);ok(!sent.contains("sk-abcdefghijkl")&&sent.contains("[redacted]"),"credential redacted before sending");ok(!sent.contains(".jsonl")&&!sent.contains("\\\"session\\\":\\\"s0"),"session names anonymised");ok(!sent.contains("system-reminder"),"sample has no harness text");
-    mode="slow";ui(()->l.workspace.analyze.doClick());pause(500);ok(l.cancel.isShowing(),"Stop visible while working");long t0=System.currentTimeMillis();ui(()->l.cancel.doClick());idle();ok(System.currentTimeMillis()-t0<4000&&!anyDialog()&&status().contains("Stopped"),"Stop cancels a slow request silently: "+status());
-    mode="ok";ui(()->l.workspace.analyze.doClick());idle();
+    mode="slow";ui(()->l.workspace.analyze(true));pause(500);ok(l.cancel.isShowing(),"Stop visible while working");long t0=System.currentTimeMillis();ui(()->l.cancel.doClick());idle();ok(System.currentTimeMillis()-t0<4000&&!anyDialog()&&status().contains("Stopped"),"Stop cancels a slow request silently: "+status());
+    mode="ok";ui(()->l.workspace.analyze(true));idle();
     Solutions.Tool tx=l.workspace.store.tools.stream().filter(x->x.topic.equals("standup-notes")).findFirst().orElse(null);ok(tx!=null,"model-backed tool created: "+status());
-    mode="none";ui(()->l.workspace.analyze.doClick());idle();ok(status().contains("No")||status().contains("no"),"no-opportunity message: "+status());mode="ok";
+    mode="none";ui(()->l.workspace.analyze(true));idle();ok(status().contains("No")||status().contains("no"),"no-opportunity message: "+status());mode="ok";
     shot("07-home-two");
 
     System.out.println("Patterns");
@@ -184,14 +191,29 @@ public class Drive {
     ok(l.patterns.analyze.isShowing(),"AI action visible");
     mode="slow";later(l.patterns.analyze::doClick);{JDialog sd=dialog("Analyze with AI");ok(allText(sd).contains("requests to OpenAI"),"states what will be sent");press(sd,"OK");}pause(500);ok(l.patterns.running&&l.cancel.isShowing(),"run shows progress");ui(()->l.cancel.doClick());idle();pause(600);ok(!l.patterns.running&&!l.patterns.llm.hasPatterns(),"Stop ends AI run: "+status());mode="ok";
     later(l.patterns.analyze::doClick);{JDialog sd=dialog("Analyze with AI");press(sd,"Cancel");}pause(150);ok(!l.busy,"Cancel sends nothing");
-    int sentBefore=seen.size();later(l.patterns.analyze::doClick);{JDialog sd=dialog("Analyze with AI");press(sd,"OK");}idle();pause(900);
+    int sentBefore=seen.size();mode="drip";later(l.patterns.analyze::doClick);{JDialog sd=dialog("Analyze with AI");press(sd,"OK");}
+    {long tw=System.currentTimeMillis();while(l.patterns.llm.partial.isEmpty()&&System.currentTimeMillis()-tw<9000)pause(30);pause(150);ok(l.busy&&!l.patterns.llm.partial.isEmpty()&&l.patterns.result.groups().stream().anyMatch(x->x.label.equals("Cleans report CSVs")),"first pattern on the map while still working");Patterns.Group live=l.patterns.result.groups().get(0);ui(()->l.patterns.toggle(live));ok(l.patterns.selected.size()==1,"can select while working");}
+    idle();pause(900);mode="ok";
     ok(seen.size()-sentBefore==2&&l.patterns.llm.hasPatterns(),"AI patterns built in 2 calls: "+(seen.size()-sentBefore));ok(l.patterns.result.groups().stream().anyMatch(x->x.label.equals("Cleans report CSVs")),"map uses AI names");ok(l.patterns.analyze.getText().equals("Regroup"),"action becomes Regroup");shot("13-ai-map");
     {boolean inside=true;var mp=l.patterns.map;for(double[] b:mp.bubbles.values())if(b[0]-b[2]<0||b[1]-b[2]<0||b[0]+b[2]>mp.getWidth()||b[1]+b[2]>mp.getHeight())inside=false;ok(inside&&mp.bubbles.size()==l.patterns.result.groups().size(),"every bubble fits on the map");}
-    Patterns.Group pg=l.patterns.result.groups().get(0);ui(()->l.patterns.toggle(pg));ok(l.patterns.scope.getText().contains("1 pattern"),"bubble selects scope");shot("11-patterns-selected");
+    Patterns.Group pg=l.patterns.result.groups().get(0);ui(()->l.patterns.toggle(pg));ok(l.patterns.scope.getText().contains("1 pattern"),"bubble selects scope");{int barTotal=l.patterns.barCounts().values().stream().mapToInt(Integer::intValue).sum();ok(barTotal==pg.items.size(),"percentages follow the selection: "+barTotal);}shot("11-patterns-selected");
     later(l.patterns.ask::doClick);idle();pause(300);
-    ok(l.patterns.reports.size()==1&&l.patterns.stepTwo.isSelected()&&allText(l.patterns.results).contains("re-explain"),"step 2 shows finding: "+status());ok(allText(l.patterns.results).contains("CLAUDE.md"),"suggestion has first step");shot("12-findings");
-    press(l.patterns.results,"Save to Home");pause(200);ok(l.workspace.store.hasTopic("insight-report-cleanup-instruction"),"suggestion saved to Home");
-    ok(Files.exists(Insights.file(home.resolve(".loop"))),"findings persisted");
+    ok(l.page.equals("Home"),"Find the problems moves to Home");
+    ok(l.patterns.feedback.size()==2&&allText(l.patterns.results).contains("Report cleanup"),"Feedback listed: "+status());ok(!allText(l.patterns.results).contains("re-explain"),"list shows only name and one line");shot("12-feedback");
+    Insights.Finding fb=l.patterns.feedback.get(0);ui(()->l.patterns.detail(fb));JDialog fd=dialog("Report cleanup");ok(allText(fd).contains("re-explain")&&find(fd,"Find: Python for Data Analysis")!=null,"click opens detail with source");ok(allText(fd).contains("SHARPER"),"shows the sharper version");shot("15-detail",fd);press(fd,"Why am I seeing this?");pause(100);{JDialog esc=fd;ui(()->esc.getRootPane().getActionForKeyStroke(KeyStroke.getKeyStroke("ESCAPE")).actionPerformed(new java.awt.event.ActionEvent(esc,0,"")));pause(150);ok(!esc.isShowing(),"Esc closes detail");}closeAll();
+    ok(seen.get(seen.size()-1).contains("tasks"),"agent receives all tasks");ok(Files.exists(Insights.file(home.resolve(".loop"))),"feedback persisted");
+    ok(find(l.workspace,"Get feedback")!=null,"Home has one action");
+    mode="drip";later(l.workspace.analyze::doClick);{long tw=System.currentTimeMillis();while(l.patterns.feedback.size()<3&&System.currentTimeMillis()-tw<9000)pause(30);}
+    {long tw=System.currentTimeMillis();boolean sawLive=false;while(l.busy&&System.currentTimeMillis()-tw<20000){if(l.patterns.feedback.size()==3&&l.busy&&allText(l.patterns.results).contains("Second item"))sawLive=true;pause(30);}ok(sawLive,"item visible on Home before the run finishes");}mode="ok";pause(400);
+    ok(l.logs.getText().contains("Grouping done:")&&l.logs.getText().contains("Feedback input:")&&l.logs.getText().contains("first text after")&&l.logs.getText().contains("Batch read:"),"logs explain each step");ok(l.logs.getText().contains("→ OpenAI m-oa")&&l.logs.getText().contains("streaming")&&l.logs.getText().contains("← 200"),"logs show API calls");ok(!l.logs.getText().contains("oa-key")&&!l.logs.getText().contains("standup notes from"),"logs hold no key or chat text");
+    ui(()->l.logsToggle.doClick());pause(200);ok(l.logs.isShowing(),"logs toggle opens");shot("16-logs");ui(()->l.logsToggle.doClick());pause(100);ok(!l.logs.isShowing(),"logs toggle closes");
+    ok(l.patterns.feedback.size()==4&&allText(l.workspace).contains("Second item")&&l.patterns.feedback.get(0).name().equals("Second item")&&l.patterns.feedback.get(1).name().equals("Third item"),"second run adds new items");ok(l.workspace.homeScroll.getVerticalScrollBar().getValue()==0,"new items are first");ok(seen.get(seen.size()-1).contains("Report cleanup"),"earlier items passed so they are not repeated");shot("14-home-feedback");
+    press(l.patterns.results,"Mark as done");pause(200);ok(!allText(l.patterns.results).contains("Second item")&&l.patterns.feedback.get(0).removed(),"Mark as done hides item, keeps it on file");
+    ok(find(l.patterns.results,"Show done (1)")!=null,"done items tucked behind a toggle");press(l.patterns.results,"Show done (1)");pause(150);ok(allText(l.patterns.results).contains("Second item"),"done items can be shown");shot("17-done");press(l.patterns.results,"Undo");pause(150);ok(!l.patterns.feedback.get(0).removed(),"Undo brings it back");press(l.patterns.results,"Mark as done");pause(150);ok(l.patterns.feedback.get(0).removed(),"done again");
+    {ok(l.patterns.llm.upToDate(l.engine.requests),"patterns up to date after a run");int callsBefore=seen.size();Map<String,ChatEngine.Request>[] gone=new Map[1];ui(()->{gone[0]=l.engine.removeSessions(Set.of("s0"));l.refreshChats();});ok(l.patterns.llm.changes(l.engine.requests)[1]>0,"removed chat noticed");
+     later(l.workspace.analyze::doClick);idle();pause(500);boolean regrouped=false;for(String call:seen.subList(callsBefore,seen.size()))if(call.contains("find what a person keeps doing"))regrouped=true;ok(regrouped&&l.logs.getText().contains("removed since the last grouping"),"Get feedback regroups after a removal");ok(l.patterns.llm.upToDate(l.engine.requests),"up to date again");
+     int calls2=seen.size();later(l.workspace.analyze::doClick);idle();pause(500);boolean again=false;for(String call:seen.subList(calls2,seen.size()))if(call.contains("find what a person keeps doing"))again=true;ok(!again,"no needless regroup when nothing changed");
+     ui(()->{l.engine.restoreSessions(gone[0]);l.refreshChats();});}
     ui(()->l.select("Home"));
     System.out.println("Improve, versions");
     ui(()->l.workspace.details(tx));td=dialog(tx.title);press(td,"Improve");pause(300);JDialog q=null;for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing()&&d!=td)q=d;
@@ -204,7 +226,7 @@ public class Drive {
 
     System.out.println("Pause");
     ui(()->l.workspace.pause.doClick());ok(l.workspace.pause.getText().equals("Resume"),"pause label");
-    ui(()->l.workspace.analyze.doClick());pause(100);ok(status().contains("Paused"),"Find explains pause: "+status());ui(()->l.scan());pause(100);ok(status().contains("Paused")&&!l.busy,"Import refuses while paused");
+    ui(()->l.workspace.analyze(true));pause(100);ok(status().contains("Paused"),"Find explains pause: "+status());ui(()->l.scan());pause(100);ok(status().contains("Paused")&&!l.busy,"Import refuses while paused");
     ui(()->l.workspace.pause.doClick());ok(Files.readString(home.resolve(".loop/settings.properties")).contains("paused=false"),"pause persisted");
 
     System.out.println("Background behavior");
@@ -220,7 +242,7 @@ public class Drive {
     System.out.println("Autosave");
     ui(()->{l.workspace.schedule.doClick();});ok(Files.readString(l.settingsFile).contains("schedule=true"),"checkbox saves itself");ui(()->l.workspace.schedule.doClick());
     System.out.println("Persistence, delete");
-    Solutions copy=new Solutions(home.resolve(".loop"));copy.load();ok(copy.tools.size()==3&&copy.tools.stream().anyMatch(x->x.versions.size()==3),"library survives reload");
+    Solutions copy=new Solutions(home.resolve(".loop"));copy.load();ok(copy.tools.size()==2&&copy.tools.stream().anyMatch(x->x.versions.size()==3),"library survives reload");
     ChatEngine e2=new ChatEngine();e2.load(l.data);e2.loadIndex(l.data.resolveSibling("scan-index.tsv"));ok(e2.stamps.size()>=4,"index survives reload");
     ui(()->l.select("Settings"));pause(150);press(l.frame,"Delete history");dismiss("Cancel");ok(Files.exists(l.data),"cancel keeps history");
     press(l.frame,"Delete history");dismiss("OK");pause(200);

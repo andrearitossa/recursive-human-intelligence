@@ -10,14 +10,13 @@ import java.util.List;
 final class PatternsPage extends JPanel {
     static final Map<Patterns.Mode,Color> COLORS=new EnumMap<>(Map.of(Patterns.Mode.BUILD,new Color(74,124,89),Patterns.Mode.FIX,new Color(193,84,62),Patterns.Mode.UNDERSTAND,new Color(70,120,170),Patterns.Mode.CHECK,new Color(196,150,50),Patterns.Mode.PLAN,new Color(125,92,160),Patterns.Mode.RESEARCH,new Color(52,145,145),Patterns.Mode.CORRECT,new Color(190,70,110),Patterns.Mode.STEER,new Color(140,145,135)));
     final Loop host;
-    final CardLayout steps=new CardLayout();final JPanel stepBody=new JPanel(steps);
-    final JToggleButton stepOne=stepButton("1  Your patterns"),stepTwo=stepButton("2  What to do");
-    final JButton ask=Ui.primary("Find the problems"),analyze=Ui.primary("Analyze with AI");
+    final JButton ask=Ui.primary("Get feedback"),analyze=Ui.button("Analyze with AI");
     final JTextField focus=new JTextField(20);
     final JProgressBar reading=new JProgressBar();
     final JLabel ticker=Ui.muted(" ");
     final LlmPatterns llm;
     boolean running;
+    boolean showDone;
     final JLabel scope=Ui.muted(""),overview=Ui.muted("");
     final Map_ map=new Map_();
     final ModeBars bars=new ModeBars();
@@ -28,28 +27,19 @@ final class PatternsPage extends JPanel {
     JPanel liveBar;
     Patterns.Result result;
     int analyzedSignature=-1;
-    final List<Insights.Report> reports;
+    final List<Insights.Finding> feedback;
 
     PatternsPage(Loop host){
-        this.host=host;reports=Insights.load(host.data.getParent());llm=new LlmPatterns(host.data.getParent());
+        this.host=host;feedback=Insights.load(host.data.getParent());llm=new LlmPatterns(host.data.getParent());
         setLayout(new BorderLayout(0,12));setOpaque(false);
-        JPanel stepper=new JPanel(new BorderLayout());stepper.setOpaque(false);stepper.add(Ui.row(stepOne,stepTwo),BorderLayout.WEST);
-        focus.setText(host.settings.getProperty("patterns.focus",""));focus.setToolTipText("Optional, for example: my side projects");
+        JPanel stepper=new JPanel(new BorderLayout());stepper.setOpaque(false);        focus.setText(host.settings.getProperty("patterns.focus",""));focus.setToolTipText("Optional, for example: my side projects");
         focus.addFocusListener(new FocusAdapter(){@Override public void focusLost(FocusEvent e){host.settings.setProperty("patterns.focus",focus.getText().strip());try{host.saveSettings();}catch(Exception ignored){}}});
-        JPanel run=new JPanel(new GridBagLayout());run.setOpaque(false);run.add(Ui.row(new JLabel("Focus on"),focus,analyze));stepper.add(run,BorderLayout.EAST);
+        JPanel run=new JPanel(new GridBagLayout());run.setOpaque(false);Ui.field(focus);run.add(Ui.row(new JLabel("Focus on"),focus,analyze));stepper.add(run,BorderLayout.EAST);
         analyze.addActionListener(e->runAi());
-        ButtonGroup group=new ButtonGroup();group.add(stepOne);group.add(stepTwo);
-        stepOne.addActionListener(e->show("one"));stepTwo.addActionListener(e->show("two"));
         add(stepper,BorderLayout.NORTH);
-        stepBody.setOpaque(false);stepBody.add(stepOnePage(),"one");
-        results.setBorder(new EmptyBorder(0,0,16,14));stepBody.add(Ui.scroll(results),"two");add(stepBody,BorderLayout.CENTER);
+        add(stepOnePage(),BorderLayout.CENTER);
         ask.addActionListener(e->ask());
-        show("one");renderReports();
-    }
-    private static JToggleButton stepButton(String text){JToggleButton b=new JToggleButton(text);b.setFocusPainted(false);b.setContentAreaFilled(false);b.setOpaque(true);b.setBorder(new EmptyBorder(7,14,7,14));b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));return b;}
-    void show(String step){
-        steps.show(stepBody,step);boolean one=step.equals("one");stepOne.setSelected(one);stepTwo.setSelected(!one);
-        for(JToggleButton b:List.of(stepOne,stepTwo)){boolean on=b.isSelected();b.setBackground(on?Ui.GREEN:Ui.BG);b.setForeground(on?Color.WHITE:Ui.INK);}
+        renderReports();
     }
     private JComponent stepOnePage(){
         JPanel left=new JPanel(new BorderLayout(0,8));left.setOpaque(false);
@@ -75,68 +65,112 @@ final class PatternsPage extends JPanel {
     void render(){
         if(result.requests()==0){overview.setText("Import your chats first.");}
         else if(running){}
-        else if(llm.hasPatterns()){int unread=llm.pending(host.engine.requests).size();overview.setText(result.groups().size()+" patterns from "+result.requests()+" requests in "+result.sessions()+" chats"+(unread>0?"  ·  "+unread+" new to read":""));analyze.setText(unread>0?"Read "+unread+" new":"Regroup");}
+        else if(llm.hasPatterns()){int unread=llm.pending(host.engine.requests).size();overview.setText(result.groups().size()+" patterns from "+result.requests()+" requests in "+result.sessions()+" chats"+(unread>0?"  ·  "+unread+" new to read":""));analyze.setText(unread>0?"Read "+unread+" new":"Regroup");if(!running&&unread==0&&!llm.upToDate(host.engine.requests))overview.setText(overview.getText()+"  ·  chats changed, Get feedback will update this");}
         else{overview.setText("Quick keyword map of "+result.requests()+" requests. AI finds clearer patterns.");analyze.setText("Analyze with AI");}
         bars.repaint();map.layoutBubbles();renderDetail();
     }
     List<Patterns.Group> visible(){List<Patterns.Group> out=new ArrayList<>();if(result!=null)for(Patterns.Group g:result.groups())if(modeFilter==null||g.dominant()==modeFilter)out.add(g);return out;}
-    void toggle(Patterns.Group g){if(!selected.remove(g))selected.add(g);map.repaint();renderDetail();}
+    void toggle(Patterns.Group g){if(!selected.remove(g))selected.add(g);map.repaint();bars.repaint();renderDetail();}
     void renderDetail(){
         detail.removeAll();
         if(selected.isEmpty()){
-            detail.put(Ui.section("Largest patterns"));
-            int shown=0;for(Patterns.Group g:visible()){if(shown++==8)break;JButton row=new JButton(g.label+"  ("+g.sessions.size()+")");row.setHorizontalAlignment(SwingConstants.LEFT);row.setFocusPainted(false);row.setContentAreaFilled(false);row.setBorder(new EmptyBorder(5,0,5,0));row.setForeground(Ui.INK);row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));row.addActionListener(e->toggle(g));detail.put(row,shown==1?6:0);}
+            detail.put(Ui.section("All patterns"));
+            int shown=0;for(Patterns.Group g:visible()){shown++;JButton row=new JButton(g.label+"  ("+g.sessions.size()+")");row.setHorizontalAlignment(SwingConstants.LEFT);row.setFocusPainted(false);row.setContentAreaFilled(false);row.setBorder(new EmptyBorder(5,0,5,0));row.setForeground(Ui.INK);row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));row.addActionListener(e->toggle(g));
+                row.addMouseListener(new MouseAdapter(){@Override public void mouseEntered(MouseEvent e){map.hover=g;row.setForeground(COLORS.get(g.dominant()));map.repaint();}@Override public void mouseExited(MouseEvent e){map.hover=null;row.setForeground(Ui.INK);map.repaint();}});detail.put(row,shown==1?6:0);}
         }else for(Patterns.Group g:selected){
             detail.put(Ui.label(g.label,Ui.sans(Font.BOLD,15),COLORS.get(g.dominant())),detail.getComponentCount()==0?0:18);
             detail.put(Ui.muted(g.sessions.size()+" chats  ·  "+g.items.size()+" requests  ·  mostly "+g.dominant().label.toLowerCase(Locale.ROOT)),2);
             if(!g.description.isBlank())detail.put(Ui.prose(g.description,Ui.INK),6);
             int n=0;for(Patterns.Item item:g.examples){if(n++==5)break;String t=item.request().text().strip().replaceAll("\\s+"," ");detail.put(Ui.prose("“"+(t.length()>150?t.substring(0,150)+"…":t)+"”",Ui.MUTED),8);}
         }
-        detail.end();detail.revalidate();detail.repaint();SwingUtilities.invokeLater(()->side.getVerticalScrollBar().setValue(0));
+        detail.end();detail.revalidate();detail.repaint();if(!running)SwingUtilities.invokeLater(()->side.getVerticalScrollBar().setValue(0));
         List<Patterns.Group> s=scoped();int chats=0;for(Patterns.Group g:s)chats+=g.sessions.size();
         scope.setText(selected.isEmpty()?(modeFilter==null?"All "+s.size()+" patterns":s.size()+" "+modeFilter.label.toLowerCase(Locale.ROOT)+" patterns"):selected.size()+(selected.size()==1?" pattern":" patterns")+" selected");
         ask.setEnabled(!host.busy&&!s.isEmpty());
     }
     List<Patterns.Group> scoped(){return selected.isEmpty()?visible():new ArrayList<>(selected);}
-    void setBusy(boolean active){analyze.setEnabled(!active);focus.setEnabled(!active);ask.setEnabled(!active&&result!=null&&!scoped().isEmpty());if(!active)refresh();}
+    void setBusy(boolean active){analyze.setEnabled(!active);focus.setEnabled(!active);ask.setEnabled(!active&&result!=null&&!scoped().isEmpty());if(!active&&!running)refresh();}
+    /** The one "Find the problems" action. Works from any screen, and answers appear on Home. */
     void ask(){
-        Models.Model connection;
-        try{connection=host.workspace.connection();}catch(Exception e){host.error(e);return;}
-        if(connection==null){JOptionPane.showMessageDialog(host.frame,"This step uses your model. Add one in Settings and allow it to receive excerpts.","Connect a model",JOptionPane.INFORMATION_MESSAGE);host.select("Settings");return;}
-        List<Patterns.Group> groups=scoped();String label=scope.getText();Map<String,Patterns.Item> refs=new HashMap<>();String input=Insights.input(groups,refs,focus.getText().strip());
-        host.workspace.run("Reading "+refs.size()+" excerpts for what they reveal…",true,()->Insights.parse(connection.complete(Insights.INSTRUCTIONS,input),refs),out->{
-            @SuppressWarnings("unchecked") List<Insights.Finding> findings=(List<Insights.Finding>)out;
-            reports.add(0,new Insights.Report(System.currentTimeMillis(),label,findings));
-            try{Insights.save(host.data.getParent(),reports);}catch(Exception e){host.error(e);}
-            host.status.setText(findings.isEmpty()?"No strong problem in that selection.":findings.size()+(findings.size()==1?" problem found.":" problems found."));
-            renderReports();show("two");
+        Models.Model connection=host.workspace.connectOrAsk();if(connection!=null)ask(connection);
+    }
+    /** The whole path from Home: read what is new, group it, then write the feedback. */
+    void flow(Models.Model connection){
+        selected.clear();
+        Map<String,ChatEngine.Request> now=host.engine.requests;
+        if(llm.upToDate(now)){Activity.log("Patterns: up to date");result=llm.result(now);analyzedSignature=now.keySet().hashCode();render();ask(connection);return;}
+        int[] c=llm.changes(now);Activity.log("Patterns: "+c[0]+" requests added, "+c[1]+" removed since the last grouping. Updating.");
+        runAi(connection,()->ask(connection));
+    }
+    void ask(Models.Model connection){
+        boolean ready=result!=null&&analyzedSignature==host.engine.requests.keySet().hashCode();
+        List<Patterns.Group> chosen=ready?scoped():null;String wanted=focus.getText().strip();List<Insights.Finding> told=new ArrayList<>(feedback);boolean selected0=selected.isEmpty();
+        Map<String,ChatEngine.Request> copy=new LinkedHashMap<>(host.engine.requests);
+        host.select("Home");host.workspace.thinking=true;host.workspace.refresh();
+        int[] next={0};
+        host.workspace.run("Writing your feedback…",true,()->{
+            List<Patterns.Group> groups=chosen!=null?chosen:(llm.hasPatterns()?llm.result(copy):Patterns.analyze(copy)).groups();
+            // With nothing selected the agent reads every described request, not just the samples.
+            Map<String,String> tasks=new HashMap<>();llm.descriptions.forEach((id,d)->tasks.put(id,d.task()));
+            List<Patterns.Item> described=new ArrayList<>();
+            if(chosen==null||selected0)described.addAll(Patterns.distinct(copy));else for(Patterns.Group g:groups)described.addAll(g.items);
+            Map<String,Patterns.Item> refs=new HashMap<>();long now=System.currentTimeMillis();int[] shown={0};
+            Map<String,Object> signals=Patterns.signals(copy);
+            Activity.log("Signals: median "+signals.get("medianWords")+" words per request, "+signals.get("percentSixWordsOrFewer")+"% are six words or fewer, "+((List<?>)signals.get("phrasesRetypedAcrossChats")).size()+" phrases retyped across chats");
+            ItemStream stream=new ItemStream(m->{
+                Insights.Finding one=Insights.parseOne(m,refs,now);if(one==null)return;shown[0]++;
+                Activity.log("+ "+one.name()+"  ("+one.evidence().size()+" quotes"+(one.actions().stream().anyMatch(a->!a.source().isBlank())?", names a source":"")+(one.you().isEmpty()?"":", sharper version")+")");
+                SwingUtilities.invokeLater(()->{
+                    // Each new item lands right after the last one from this run, above older feedback.
+                    feedback.add(next[0]++,one);
+                    try{Insights.save(host.data.getParent(),feedback);}catch(Exception e){Activity.log("✕ could not save feedback");}
+                    host.status.setText("Writing your feedback… "+next[0]+" so far");renderReports();if(next[0]==1)host.workspace.scrollHomeToTop();
+                });
+            });
+            String sentInput=Insights.input(groups,described,tasks,refs,wanted,told,signals);
+            long lines=refs.keySet().stream().filter(k->k.startsWith("t")).count();
+            Activity.log("Feedback input: "+lines+" request lines, "+(refs.size()-lines)+" excerpts from "+groups.size()+" patterns, "+Math.min(told.size(),Insights.MAX_TOLD)+" earlier items to avoid"+(wanted.isEmpty()?"":", focus set"));
+            String response=connection.stream(Insights.INSTRUCTIONS,sentInput,stream::accept);
+            if(shown[0]==0)Insights.parse(response,refs);
+            return shown[0];
+        },out->{
+            int count=(Integer)out;
+            host.status.setText(count==0?"Nothing new to say.":count+(count==1?" new item.":" new items."));Activity.log("Feedback done: "+count+" items");
+            renderReports();
         });
+        host.workspace.scrollHomeToTop();
     }
     /** Reads requests in batches and regroups, with the map growing as each batch returns. */
     void runAi(){
-        Models.Model connection;
-        try{connection=host.workspace.connection();}catch(Exception e){host.error(e);return;}
-        if(connection==null){JOptionPane.showMessageDialog(host.frame,"This uses your model. Add one in Settings and allow it to receive excerpts.","Connect a model",JOptionPane.INFORMATION_MESSAGE);host.select("Settings");return;}
+        Models.Model connection=host.workspace.connectOrAsk();if(connection!=null)runAi(connection,null);
+    }
+    void runAi(Models.Model connection,Runnable after){
         Map<String,ChatEngine.Request> copy=new LinkedHashMap<>(host.engine.requests);
         List<Patterns.Item> todo=llm.pending(copy);
         if(todo.isEmpty()&&llm.descriptions.isEmpty()){host.status.setText("Import your chats first.");return;}
         // Reading sends far more than other steps, so the amount is stated every time.
         if(!todo.isEmpty()&&JOptionPane.showConfirmDialog(host.frame,"Send "+todo.size()+" requests to "+host.workspace.provider.getSelectedItem()+"?\nEach is cut to "+LlmPatterns.EXCERPT+" characters, about "+Math.max(1,LlmPatterns.characters(todo)/1000)+"k characters in total. Obvious credentials are removed, but names and other details may remain.","Analyze with AI",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;
         String wanted=focus.getText().strip();
-        running=true;selected.clear();modeFilter=null;liveBar.setVisible(true);reading.setValue(0);reading.setIndeterminate(todo.isEmpty());ticker.setText(" ");show("one");stepOne.setSelected(true);
+        host.workspace.flowing=after!=null;running=true;selected.clear();modeFilter=null;liveBar.setVisible(true);reading.setValue(0);reading.setIndeterminate(todo.isEmpty());ticker.setText(" ");
         overview.setText(todo.isEmpty()?"Grouping…":"Reading 0 of "+todo.size()+"…");
         host.workspace.run("Analyzing your requests…",true,()->{
             llm.run(connection,copy,wanted,(stage,done,total,latest)->SwingUtilities.invokeLater(()->{
                 reading.setIndeterminate(false);reading.setMaximum(Math.max(1,total));reading.setValue(done);
-                overview.setText(stage.equals("Grouping")?"Grouping into patterns…":"Reading "+done+" of "+total+" requests…");if(stage.equals("Grouping")&&done==0)reading.setIndeterminate(true);
+                String now=stage.equals("Grouping")?"Grouping… "+done+(done==1?" pattern":" patterns")+" so far":"Reading "+done+" of "+total+" requests…";
+                overview.setText(now);host.status.setText(now);if(stage.equals("Grouping"))reading.setIndeterminate(true);
                 if(!latest.isEmpty())ticker.setText((stage.equals("Grouping")?"Found: ":"“")+latest+(stage.equals("Grouping")?"":"”"));
-                if(stage.equals("Reading")){result=llm.live(copy);bars.repaint();map.layoutBubbles();renderDetail();}
+                result=llm.live(copy);rebind();bars.repaint();map.layoutBubbles();renderDetail();
             }));
             return null;
-        },out->finishRun(copy,null));
+        },out->{finishRun(copy,null);if(after!=null)after.run();});
         watchFinish();
     }
     /** A stopped or failed run must also leave the running state. */
+    /** Selections survive as the live map updates, so it can be used while still growing. */
+    private void rebind(){
+        Set<String> names=new HashSet<>();for(Patterns.Group g:selected)names.add(g.label);selected.clear();
+        for(Patterns.Group g:result.groups())if(names.contains(g.label))selected.add(g);
+    }
     private void watchFinish(){
         javax.swing.Timer t=new javax.swing.Timer(250,null);
         t.addActionListener(e->{if(!host.busy){t.stop();if(running)finishRun(new LinkedHashMap<>(host.engine.requests),host.status.getText());}});t.start();
@@ -147,44 +181,76 @@ final class PatternsPage extends JPanel {
         if(message!=null)host.status.setText(message);
         else host.status.setText(llm.failedBatches>0?llm.failedBatches+(llm.failedBatches==1?" batch":" batches")+" could not be read. Run it again to retry.":result.groups().size()+" patterns found.");
     }
-    void forget(){try{llm.clear();}catch(Exception e){host.error(e);}reports.clear();analyzedSignature=-1;renderReports();}
+    void forget(){try{llm.clear();}catch(Exception e){host.error(e);}feedback.clear();analyzedSignature=-1;renderReports();}
+    /** A clean list: a name and one line. Everything else waits behind a click. */
     void renderReports(){
-        results.removeAll();
-        if(reports.isEmpty())results.put(Ui.label("Pick patterns in step 1, then choose Find the problems.",Ui.serif(20),Ui.INK),30);
-        boolean first=true;
-        for(Insights.Report r:reports){
-            results.put(Ui.muted(new Date(r.date()).toString().substring(4,16)+"  ·  "+r.scope()),first?0:26);first=false;
-            if(r.findings().isEmpty())results.put(Ui.prose("Nothing strong enough to suggest.",Ui.MUTED),6);
-            for(Insights.Finding f:r.findings())results.put(finding(f),10);
+        results.removeAll();boolean first=true;int done=0;
+        for(Insights.Finding f:feedback){if(f.removed()){done++;continue;}results.put(row(f,first,false));first=false;}
+        if(done>0){
+            JButton toggle=quiet((showDone?"Hide done":"Show done")+" ("+done+")");toggle.addActionListener(e->{showDone=!showDone;renderReports();});
+            results.put(Ui.row(toggle),first?0:12);
+            if(showDone)for(Insights.Finding f:feedback)if(f.removed())results.put(row(f,false,true));
         }
-        results.end();results.revalidate();results.repaint();
+        results.revalidate();results.repaint();host.workspace.refresh();
     }
-    private JComponent finding(Insights.Finding f){
-        Ui.Stack card=Ui.card(false);
-        card.put(Ui.muted(f.confidence().toUpperCase(Locale.ROOT)+" CONFIDENCE"));
-        JTextArea problem=Ui.prose(f.problem(),Ui.INK);problem.setFont(Ui.serif(21));card.put(problem,4);
-        if(!f.rootCause().isBlank())card.put(Ui.prose(f.rootCause(),Ui.MUTED),6);
-        for(Insights.Suggestion s:f.suggestions())card.put(suggestion(f,s),14);
-        JButton quotes=Ui.button("Show the evidence ("+f.evidence().size()+")");Ui.Stack shown=new Ui.Stack();shown.setVisible(false);
-        for(Insights.Quote q:f.evidence()){String t=q.text().replaceAll("\\s+"," ");shown.put(Ui.prose("“"+(t.length()>260?t.substring(0,260)+"…":t)+"”",Ui.MUTED),8);}
-        quotes.addActionListener(e->{shown.setVisible(!shown.isVisible());card.revalidate();});
-        card.put(Ui.row(quotes),14);card.put(shown);return card;
+    boolean hasFeedback(){return !feedback.isEmpty();}
+    void setDone(Insights.Finding f,boolean done){
+        // Done items stay on file, so the agent knows not to bring them back.
+        feedback.set(feedback.indexOf(f),f.withDone(done));
+        try{Insights.save(host.data.getParent(),feedback);}catch(Exception e){host.error(e);}
+        host.status.setText(done?f.name()+" is done.":f.name()+" is back on your list.");renderReports();
     }
-    private JComponent suggestion(Insights.Finding f,Insights.Suggestion s){
-        Ui.Stack box=new Ui.Stack();box.setOpaque(true);box.setBackground(Ui.SOFT);box.setBorder(new EmptyBorder(12,14,12,14));
-        box.put(Ui.label(s.type().toUpperCase(Locale.ROOT),Ui.sans(Font.BOLD,11),Ui.GREEN));box.put(Ui.label(s.title(),Ui.sans(Font.BOLD,15),Ui.INK),2);
-        if(!s.why().isBlank())box.put(Ui.prose(s.why(),Ui.MUTED),4);
-        box.put(Ui.section("Start here"),8);JTextArea first=Ui.prose(s.firstStep(),Ui.INK);first.setFocusable(true);box.put(first,2);
-        int n=2;for(String step:s.steps())box.put(Ui.prose((n++)+".  "+step,Ui.INK),4);
-        if(!s.payoff().isBlank())box.put(Ui.prose("→ "+s.payoff(),Ui.GREEN),8);
-        JButton keep=Ui.button("Save to Home"),copy=Ui.button("Copy");
-        copy.addActionListener(e->{Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(s.firstStep()),null);host.status.setText("Copied.");});
-        String topic="insight-"+s.title().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+","-");
-        if(host.workspace.store.hasTopic(topic)){keep.setText("Saved");keep.setEnabled(false);}
-        keep.addActionListener(e->{try{host.workspace.store.saveSuggestion(topic,s.title(),s.why().isBlank()?f.problem():s.why(),f.problem()+"\n\n"+s.firstStep(),s.steps(),f.evidence().stream().map(Insights.Quote::id).toList());keep.setText("Saved");keep.setEnabled(false);host.refreshLibrary();host.status.setText(s.title()+" is on Home.");}catch(Exception error){host.error(error);}});
-        box.put(Ui.row(copy,keep),10);return box;
+    /** A text link: present when wanted, without competing with the content. */
+    private static JButton quiet(String text){
+        JButton b=new JButton(text);b.setFocusPainted(false);b.setContentAreaFilled(false);b.setBorder(new EmptyBorder(6,8,6,8));b.setForeground(Ui.MUTED);b.setFont(Ui.sans(Font.PLAIN,13));b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.addMouseListener(new MouseAdapter(){@Override public void mouseEntered(MouseEvent e){b.setForeground(Ui.GREEN);}@Override public void mouseExited(MouseEvent e){b.setForeground(Ui.MUTED);}});return b;
+    }
+    private JComponent row(Insights.Finding f,boolean top,boolean done){
+        Color rest=done?Ui.BG:Color.WHITE;
+        JPanel row=new JPanel(new BorderLayout(12,0));row.setBackground(rest);row.setBorder(new CompoundBorder(new MatteBorder(0,0,1,0,Ui.LINE),new EmptyBorder(done?9:14,18,done?9:14,12)));row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        Ui.Stack text=new Ui.Stack();text.put(Ui.label(f.name(),done?Ui.sans(Font.PLAIN,14):Ui.serif(19),done?Ui.MUTED:Ui.INK));if(!done)text.put(Ui.label(f.description(),Ui.sans(Font.PLAIN,14),Ui.MUTED),2);row.add(text,BorderLayout.CENTER);
+        JButton mark=quiet(done?"Undo":"Mark as done");mark.addActionListener(e->setDone(f,!done));JPanel east=new JPanel(new GridBagLayout());east.setOpaque(false);east.add(mark);row.add(east,BorderLayout.EAST);
+        MouseAdapter open=new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){detail(f);}@Override public void mouseEntered(MouseEvent e){if(!done)row.setBackground(new Color(251,252,249));}@Override public void mouseExited(MouseEvent e){row.setBackground(rest);}};row.addMouseListener(open);text.addMouseListener(open);
+        return row;
+    }
+    void detail(Insights.Finding f){
+        JDialog dialog=new JDialog(host.frame,f.name(),false);
+        Ui.Stack body=new Ui.Stack();body.setBorder(new EmptyBorder(26,30,20,30));
+        body.put(Ui.label(f.name(),Ui.serif(28),Ui.INK));
+        JTextArea message=Ui.prose(f.message().isBlank()?f.description():f.message(),Ui.INK);message.setFont(Ui.sans(Font.PLAIN,16));body.put(message,12);
+        if(!f.you().isBlank()){
+            Ui.Stack quote=new Ui.Stack();quote.setBorder(new CompoundBorder(new MatteBorder(0,3,0,0,Ui.GREEN),new EmptyBorder(2,12,2,0)));
+            quote.put(Ui.label("YOU WROTE",Ui.sans(Font.BOLD,11),Ui.MUTED));quote.put(Ui.prose("“"+f.you()+"”",Ui.MUTED),2);
+            quote.put(Ui.label("SHARPER",Ui.sans(Font.BOLD,11),Ui.GREEN),8);JTextArea sharp=Ui.prose(f.better(),Ui.INK);quote.put(sharp,2);body.put(quote,16);
+        }
+        for(Insights.Action a:f.actions()){
+            Ui.Stack box=new Ui.Stack();box.setOpaque(true);box.setBackground(Ui.SOFT);box.setBorder(new EmptyBorder(14,16,14,16));box.put(Ui.prose(a.text(),Ui.INK));
+            JButton copy=Ui.button("Copy");copy.addActionListener(e->{Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(a.text()),null);host.status.setText("Copied.");});
+            if(a.source().isBlank())box.put(Ui.row(copy),10);
+            else{JButton find=Ui.primary("Find: "+(a.source().length()>60?a.source().substring(0,60)+"…":a.source()));find.addActionListener(e->search(a.source()));box.put(Ui.row(find,copy),10);}
+            body.put(box,14);
+        }
+        JButton why=Ui.button("Why am I seeing this?");Ui.Stack quotes=new Ui.Stack();quotes.setVisible(false);
+        for(Insights.Quote q:f.evidence()){String t=q.text().replaceAll("\\s+"," ");quotes.put(Ui.prose("“"+(t.length()>220?t.substring(0,220)+"…":t)+"”",Ui.MUTED),8);}
+        why.addActionListener(e->{quotes.setVisible(!quotes.isVisible());body.revalidate();});
+        JButton remove=Ui.button(f.removed()?"Undo":"Mark as done");remove.addActionListener(e->{setDone(f,!f.removed());dialog.dispose();});
+        body.put(Ui.row(why,remove),18);body.put(quotes);body.end();
+        dialog.setContentPane(Ui.scroll(body));dialog.getContentPane().setBackground(Ui.BG);dialog.setSize(640,560);dialog.setLocationRelativeTo(host.frame);Ui.closeOnEscape(dialog);dialog.setVisible(true);
+    }
+    /** A web search for the exact title always works, unlike a link a model might invent. */
+    void search(String source){
+        try{Desktop.getDesktop().browse(java.net.URI.create("https://www.google.com/search?q="+java.net.URLEncoder.encode(source,java.nio.charset.StandardCharsets.UTF_8)));}catch(Exception e){host.error(e);}
     }
 
+    /** The bar describes what is in view: the selection, else the patterns found so far, else everything read. */
+    Map<Patterns.Mode,Integer> barCounts(){
+        boolean grouping=running&&!llm.partial.isEmpty();
+        if(selected.isEmpty()&&!grouping)return result.modes();
+        Map<String,Patterns.Item> unique=new HashMap<>();
+        for(Patterns.Group g:selected.isEmpty()?result.groups():selected)for(Patterns.Item i:g.items)unique.put(i.id(),i);
+        Map<Patterns.Mode,Integer> counts=new EnumMap<>(Patterns.Mode.class);for(Patterns.Item i:unique.values())counts.merge(i.mode(),1,Integer::sum);
+        return counts;
+    }
     /** How the user works: a single stacked bar. Clicking a color filters the map. */
     final class ModeBars extends JComponent {
         final List<Object[]> hits=new ArrayList<>();
@@ -194,15 +260,18 @@ final class PatternsPage extends JPanel {
         }
         @Override protected void paintComponent(Graphics graphics){
             hits.clear();if(result==null||result.requests()==0)return;
+            Map<Patterns.Mode,Integer> counts=barCounts();int all=counts.values().stream().mapToInt(Integer::intValue).sum();if(all==0)return;
             Graphics2D g=(Graphics2D)graphics.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            int x=0,w=getWidth();g.setFont(Ui.sans(Font.PLAIN,12));int lx=0;
+            int x=0,w=getWidth();g.setFont(Ui.sans(Font.PLAIN,12));int lx=0,ly=28;
             for(Patterns.Mode m:Patterns.Mode.values()){
-                int n=result.modes().getOrDefault(m,0);if(n==0)continue;int bw=Math.max(3,(int)Math.round(w*(double)n/result.requests()));
+                int n=counts.getOrDefault(m,0);if(n==0)continue;int bw=Math.max(3,(int)Math.round(w*(double)n/all));
                 boolean dim=modeFilter!=null&&modeFilter!=m;Color c=COLORS.get(m);g.setColor(dim?new Color(c.getRed(),c.getGreen(),c.getBlue(),70):c);g.fillRect(x,0,bw-1,16);hits.add(new Object[]{new Rectangle(x,0,bw,16),m});x+=bw;
-                String text=m.label+" "+Math.round(100.0*n/result.requests())+"%";int tw=g.getFontMetrics().stringWidth(text);
-                g.fillOval(lx,28,9,9);g.setColor(dim?Ui.LINE:Ui.MUTED);g.drawString(text,lx+13,37);hits.add(new Object[]{new Rectangle(lx,22,tw+16,22),m});lx+=tw+26;
+                String text=m.label+" "+Math.round(100.0*n/all)+"%";int tw=g.getFontMetrics().stringWidth(text);
+                if(lx+tw+16>w&&lx>0){lx=0;ly+=19;}
+                g.fillOval(lx,ly,9,9);g.setColor(dim?Ui.LINE:Ui.MUTED);g.drawString(text,lx+13,ly+9);hits.add(new Object[]{new Rectangle(lx,ly-5,tw+16,19),m});lx+=tw+26;
             }
             g.dispose();
+            int wanted=ly+16;if(getPreferredSize().height!=wanted){setPreferredSize(new Dimension(100,wanted));revalidate();}
         }
     }
     /** The pattern map: bubbles glide to new sizes and places, so changes are felt rather than just appearing. */
@@ -211,7 +280,7 @@ final class PatternsPage extends JPanel {
         final javax.swing.Timer motion=new javax.swing.Timer(16,e->step());
         Map_(){
             addComponentListener(new ComponentAdapter(){@Override public void componentResized(ComponentEvent e){layoutBubbles();}});
-            addMouseListener(new MouseAdapter(){@Override public void mousePressed(MouseEvent e){Patterns.Group g=at(e.getPoint());if(g!=null&&!running)toggle(g);}});
+            addMouseListener(new MouseAdapter(){@Override public void mousePressed(MouseEvent e){Patterns.Group g=at(e.getPoint());if(g!=null)toggle(g);}});
             addMouseMotionListener(new MouseMotionAdapter(){@Override public void mouseMoved(MouseEvent e){Patterns.Group g=at(e.getPoint());if(g!=hover){hover=g;setCursor(Cursor.getPredefinedCursor(g==null?Cursor.DEFAULT_CURSOR:Cursor.HAND_CURSOR));setToolTipText(g==null?null:g.label+" · "+g.sessions.size()+" chats");repaint();}}});
         }
         double[] now(Patterns.Group g){double[] b=shown.get(g.label);return b==null?bubbles.get(g):b;}
@@ -227,14 +296,14 @@ final class PatternsPage extends JPanel {
             double unit=Math.sqrt(w*h*0.50/(Math.PI*area));
             double biggest=Math.min(w,h)*.26;
             // Shrinks until every bubble fits, so none is ever cut off, however few or many there are.
-            for(double scale=1;scale>.2&&!place(groups,unit*scale,biggest*scale,w,h);scale*=.9){}
+            for(double scale=1;scale>.03&&!place(groups,unit*scale,biggest*scale,13*scale,w,h);scale*=.9){}
             Set<String> names=new HashSet<>();for(Patterns.Group g:groups)names.add(g.label);shown.keySet().retainAll(names);
             motion.start();
         }
-        private boolean place(List<Patterns.Group> groups,double unit,double biggest,int w,int h){
+        private boolean place(List<Patterns.Group> groups,double unit,double biggest,double smallest,int w,int h){
             bubbles.clear();List<double[]> placed=new ArrayList<>();
             for(Patterns.Group g:groups){
-                double r=Math.min(biggest,Math.max(13,Math.sqrt(g.sessions.size())*unit));boolean fits=false;double x=0,y=0;
+                double r=Math.min(biggest,Math.max(smallest,Math.sqrt(g.sessions.size())*unit));boolean fits=false;double x=0,y=0;
                 // Golden-angle spiral outward: the largest pattern sits in the middle, stable between runs.
                 for(int i=0;i<6000&&!fits;i++){double a=i*2.39996,d=Math.sqrt(i)*5;x=w/2.0+Math.cos(a)*d*1.35;y=h/2.0+Math.sin(a)*d*.85;
                     if(x-r<2||y-r<2||x+r>w-2||y+r>h-2)continue;fits=true;for(double[] o:placed)if(Math.hypot(o[0]-x,o[1]-y)<o[2]+r+4){fits=false;break;}}
@@ -255,10 +324,17 @@ final class PatternsPage extends JPanel {
                 double[] b=now(p);if(b[2]<1)continue;boolean on=selected.contains(p),off=!selected.isEmpty()&&!on;Color c=COLORS.get(p.dominant());
                 g.setColor(new Color(c.getRed(),c.getGreen(),c.getBlue(),off?70:p==hover||on?255:205));g.fill(new Ellipse2D.Double(b[0]-b[2],b[1]-b[2],b[2]*2,b[2]*2));
                 if(on){g.setColor(Ui.INK);g.setStroke(new BasicStroke(2.5f));g.draw(new Ellipse2D.Double(b[0]-b[2]-3,b[1]-b[2]-3,b[2]*2+6,b[2]*2+6));}
-                if(b[2]<28)continue;
-                g.setColor(Color.WHITE);g.setFont(Ui.sans(Font.BOLD,b[2]>52?13:11));FontMetrics m=g.getFontMetrics();
-                List<String> lines=wrap(p.label,m,b[2]*1.6,b[2]>52?3:2);int y=(int)(b[1]-(lines.size()*m.getHeight())/2.0+m.getAscent());
-                for(String t:lines){while(m.stringWidth(t)>b[2]*1.8&&t.length()>3)t=t.substring(0,t.length()-1);g.drawString(t,(int)(b[0]-m.stringWidth(t)/2.0),y);y+=m.getHeight();}
+                if(b[2]<24)continue;
+                // Whole words only: shrink the text before ever cutting one.
+                g.setColor(Color.WHITE);FontMetrics m=null;List<String> lines=null;double room=b[2]*1.78;
+                for(int size=b[2]>52?14:12;size>=9;size--){
+                    g.setFont(Ui.sans(Font.BOLD,size));m=g.getFontMetrics();lines=wrap(p.label,m,room,99);boolean fits=lines.size()<=3&&lines.size()*m.getHeight()<=b[2]*1.5;
+                    for(String t:lines)if(m.stringWidth(t)>room)fits=false;
+                    if(fits)break;lines=null;
+                }
+                if(lines==null)continue; // Too small for its name: readable on hover and in the list.
+                int y=(int)(b[1]-(lines.size()*m.getHeight())/2.0+m.getAscent());
+                for(String t:lines){g.drawString(t,(int)(b[0]-m.stringWidth(t)/2.0),y);y+=m.getHeight();}
             }
             g.dispose();
         }

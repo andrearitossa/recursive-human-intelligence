@@ -17,7 +17,7 @@ public final class Loop {
     static java.nio.channels.FileChannel instanceChannel;
     static java.nio.channels.FileLock instanceLock;
 
-    final JFrame frame=new JFrame("Loop");
+    final JFrame frame=new JFrame("RHI · Recursive Human Intelligence");
     final ChatEngine engine=new ChatEngine();
     final Path data=Path.of(System.getProperty("user.home"),".loop","history.tsv");
     final Path settingsFile=data.resolveSibling("settings.properties");
@@ -56,7 +56,7 @@ public final class Loop {
         workspace=new Workspace(this);patterns=new PatternsPage(this);
         pages.setOpaque(false);pages.add(workspace,"Home");pages.add(patterns,"Patterns");pages.add(chatsPage(),"Chats");pages.add(workspace.settingsPanel,"Settings");
         JPanel root=new JPanel(new BorderLayout(0,16));root.setBackground(Ui.BG);root.setBorder(new EmptyBorder(18,28,14,28));frame.setContentPane(root);
-        root.add(header(),BorderLayout.NORTH);root.add(pages,BorderLayout.CENTER);root.add(footer(),BorderLayout.SOUTH);
+        root.add(header(),BorderLayout.NORTH);root.add(pages,BorderLayout.CENTER);JPanel south=new JPanel(new BorderLayout());south.setOpaque(false);south.add(footer(),BorderLayout.NORTH);south.add(logsPanel(),BorderLayout.CENTER);root.add(south,BorderLayout.SOUTH);
         select("Home");setTaskControls(false);setupTray();refreshChats();refreshLibrary();
         frame.setSize(1080,780);frame.setMinimumSize(new Dimension(780,560));frame.setLocationRelativeTo(null);frame.setVisible(true);
     }
@@ -74,7 +74,7 @@ public final class Loop {
     }
     private JComponent header(){
         JPanel top=new JPanel(new BorderLayout());top.setOpaque(false);
-        top.add(Ui.label("loop",Ui.sans(Font.BOLD,30),Ui.GREEN),BorderLayout.WEST);
+        top.add(Ui.label("RHI",Ui.sans(Font.BOLD,30),Ui.GREEN),BorderLayout.WEST);
         JPanel links=new JPanel(new FlowLayout(FlowLayout.RIGHT,6,4));links.setOpaque(false);ButtonGroup group=new ButtonGroup();
         for(String name:List.of("Home","Patterns","Chats","Settings")){
             JToggleButton link=new JToggleButton(name);link.setFocusPainted(false);link.setContentAreaFilled(false);link.setOpaque(true);link.setBackground(Ui.BG);link.setForeground(Ui.INK);link.setBorder(new EmptyBorder(7,14,7,14));link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -89,6 +89,7 @@ public final class Loop {
     }
     private JComponent chatsPage(){
         table.setRowHeight(30);table.setShowVerticalLines(false);table.setGridColor(Ui.LINE);table.setFillsViewportHeight(true);table.setBackground(Color.WHITE);table.getTableHeader().setReorderingAllowed(false);table.setRowSorter(sorter);
+        ((DefaultTableCellRenderer)table.getTableHeader().getDefaultRenderer()).setHorizontalAlignment(SwingConstants.LEFT);table.setIntercellSpacing(new Dimension(8,0));table.setShowHorizontalLines(true);
         int[] widths={720,90,80};for(int i=0;i<widths.length;i++)table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         table.getSelectionModel().addListSelectionListener(e->updateChatButtons());
         table.getInputMap().put(KeyStroke.getKeyStroke("DELETE"),"removeChats");
@@ -100,7 +101,7 @@ public final class Loop {
         });
         JScrollPane tableScroll=new JScrollPane(table);tableScroll.setBorder(new LineBorder(Ui.LINE));tableScroll.getViewport().setBackground(Color.WHITE);
         JPanel bar=new JPanel(new BorderLayout());bar.setOpaque(false);bar.add(Ui.row(scan,choose),BorderLayout.WEST);
-        JPanel searchRow=new JPanel(new GridBagLayout());searchRow.setOpaque(false);searchRow.add(Ui.row(new JLabel("Search"),chatSearch));bar.add(searchRow,BorderLayout.EAST);
+        JPanel searchRow=new JPanel(new GridBagLayout());searchRow.setOpaque(false);searchRow.add(Ui.row(new JLabel("Search"),Ui.field(chatSearch)));bar.add(searchRow,BorderLayout.EAST);
         JPanel below=new JPanel(new BorderLayout());below.setOpaque(false);below.add(stats,BorderLayout.WEST);below.add(Ui.row(undoRemove,removeChats),BorderLayout.EAST);
         JPanel page=new JPanel(new BorderLayout(0,10));page.setOpaque(false);page.add(bar,BorderLayout.NORTH);page.add(tableScroll,BorderLayout.CENTER);page.add(below,BorderLayout.SOUTH);
         scan.addActionListener(e->scan());choose.addActionListener(e->pick());removeChats.addActionListener(e->removeSelectedChats());undoRemove.addActionListener(e->undoRemovedChats());
@@ -127,7 +128,7 @@ public final class Loop {
         Set<String> chosen=new HashSet<>();for(int view:table.getSelectedRows())chosen.add(rowSessions.get(table.convertRowIndexToModel(view)));
         if(chosen.isEmpty())return;
         lastRemoved=engine.removeSessions(chosen);
-        if(saveChats())status.setText(chosen.size()+(chosen.size()==1?" chat":" chats")+" removed from Loop. The original files were not touched.");
+        if(saveChats())status.setText(chosen.size()+(chosen.size()==1?" chat":" chats")+" removed from RHI. The original files were not touched.");
         refreshChats();refreshLibrary();
     }
     void undoRemovedChats(){
@@ -142,16 +143,32 @@ public final class Loop {
         cancel.addActionListener(e->{stopped.set(true);status.setText("Stopping after the current file…");cancel.setEnabled(false);if(workspace.job!=null)workspace.interrupt();});
         JPanel right=new JPanel(new FlowLayout(FlowLayout.RIGHT,10,0));right.setOpaque(false);right.add(progress);right.add(cancel);
         JPanel foot=new JPanel(new BorderLayout(12,0));foot.setOpaque(false);foot.setBorder(new CompoundBorder(new MatteBorder(1,0,0,0,Ui.LINE),new EmptyBorder(10,0,0,0)));foot.setPreferredSize(new Dimension(100,48));
-        status.setMinimumSize(new Dimension(0,0));foot.add(status,BorderLayout.CENTER);foot.add(right,BorderLayout.EAST);return foot;
+        status.setMinimumSize(new Dimension(0,0));logsToggle.setFocusPainted(false);logsToggle.setContentAreaFilled(false);logsToggle.setBorder(new EmptyBorder(4,0,4,12));logsToggle.setForeground(Ui.MUTED);logsToggle.setFont(Ui.sans(Font.PLAIN,13));logsToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        foot.add(logsToggle,BorderLayout.WEST);foot.add(status,BorderLayout.CENTER);foot.add(right,BorderLayout.EAST);return foot;
+    }
+    final JToggleButton logsToggle=new JToggleButton(">  Logs");
+    final JTextArea logs=new JTextArea();
+    private JScrollPane logsScroll;
+    private JComponent logsPanel(){
+        logs.setEditable(false);logs.setFont(new Font(Font.MONOSPACED,Font.PLAIN,12));logs.setForeground(new Color(214,222,206));logs.setBackground(new Color(31,41,29));logs.setMargin(new Insets(8,10,8,10));logs.setCaretColor(logs.getBackground());
+        logsScroll=new JScrollPane(logs);logsScroll.setBorder(null);logsScroll.setPreferredSize(new Dimension(100,170));logsScroll.setVisible(Boolean.parseBoolean(settings.getProperty("logs","false")));
+        logsToggle.setSelected(logsScroll.isVisible());logsToggle.setText(logsScroll.isVisible()?"v  Logs":">  Logs");
+        logsToggle.addActionListener(e->{
+            boolean on=logsToggle.isSelected();logsScroll.setVisible(on);logsToggle.setText(on?"v  Logs":">  Logs");settings.setProperty("logs",Boolean.toString(on));
+            try{saveSettings();}catch(IOException ignored){}
+            frame.revalidate();
+        });
+        Activity.listen(line->SwingUtilities.invokeLater(()->{logs.append(line+"\n");logs.setCaretPosition(logs.getDocument().getLength());}));
+        return logsScroll;
     }
     void deleteHistory(){
         if(JOptionPane.showConfirmDialog(frame,"Delete imported history, solutions, feedback, and generated tools?\nOriginal chats stay untouched.","Delete history",JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.OK_OPTION)return;
         try{
             Files.deleteIfExists(data);Files.deleteIfExists(data.resolveSibling("scan-index.tsv"));engine.requests.clear();engine.stamps.clear();workspace.store.clear();
-            engine.removed.clear();Files.deleteIfExists(removedFile);Files.deleteIfExists(Insights.file(data.getParent()));patterns.forget();lastRemoved=Map.of();refreshChats();status.setText("History deleted. Original chats were not touched.");refreshLibrary();
+            engine.removed.clear();Files.deleteIfExists(removedFile);Files.deleteIfExists(Insights.file(data.getParent()));Files.deleteIfExists(data.resolveSibling("insights.json"));patterns.forget();lastRemoved=Map.of();refreshChats();status.setText("History deleted. Original chats were not touched.");refreshLibrary();
         }catch(IOException error){error(error);}
     }
-    void error(Exception e){Throwable cause=e;while(cause.getCause()!=null)cause=cause.getCause();JOptionPane.showMessageDialog(frame,cause.getMessage()==null?cause.toString():cause.getMessage(),"Loop",JOptionPane.ERROR_MESSAGE);}
+    void error(Exception e){Throwable cause=e;while(cause.getCause()!=null)cause=cause.getCause();Activity.log("✕ "+(cause.getMessage()==null?cause.toString():cause.getMessage()));JOptionPane.showMessageDialog(frame,cause.getMessage()==null?cause.toString():cause.getMessage(),"RHI",JOptionPane.ERROR_MESSAGE);}
     void pick(){
         JFileChooser chooser=new JFileChooser();chooser.setDialogTitle("Add a folder with chats");chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);chooser.setFileHidingEnabled(false);
         if(chooser.showOpenDialog(frame)!=JFileChooser.APPROVE_OPTION)return;
@@ -165,10 +182,12 @@ public final class Loop {
             scan();
         }catch(Exception e){error(e);}
     }
-    void scan(){scan(true);}
+    void scan(){select("Chats");scan(true);}
+    /** Imports, then continues on success. Used by the one-click flow, which stays on Home. */
+    void scan(Runnable after){afterScan=after;scan(true);if(!busy){afterScan=null;workspace.flowing=false;workspace.refresh();}}
+    private Runnable afterScan;
     void scan(boolean manual){
         if(busy)return;
-        if(manual)select("Chats");
         List<Path> exclusions;
         try{exclusions=workspace.excludedPaths();}catch(Exception e){if(manual)error(e);else status.setText(e.getMessage());return;}
         if(workspace.paused()){status.setText("Paused. Resume in Settings.");return;}
@@ -186,11 +205,15 @@ public final class Loop {
             }
             @Override protected void process(List<ChatEngine.Update> updates){show(updates.get(updates.size()-1));}
             @Override protected void done(){
-                try{ChatEngine.Update u=get();completed=true;status.setText(stopped.get()?"Stopped. Finished chats were kept.":u.added()==0?"No new requests.":u.added()+(u.added()==1?" new request":" new requests")+" imported.");refreshChats();refreshLibrary();}
+                try{ChatEngine.Update u=get();completed=true;Activity.log("Import: "+u.chats()+" chats, "+u.added()+" new requests, "+u.skipped()+" unreadable");status.setText(stopped.get()?"Stopped. Finished chats were kept.":u.added()==0?"No new requests.":u.added()+(u.added()==1?" new request":" new requests")+" imported.");refreshChats();refreshLibrary();}
                 catch(Exception e){status.setText("Import could not finish. Try again to save what was read.");if(manual)error(e);}
                 finally{busy=false;setTaskControls(false);}
                 if(quitRequested)quit();
-                else if(completed&&!manual&&!stopped.get())workspace.analyze(false);
+                else{
+                    Runnable next=afterScan;afterScan=null;
+                    if(next!=null&&completed&&!stopped.get())next.run();
+                    else if(completed&&!manual&&!stopped.get())workspace.analyze(false);
+                }
             }
         }.execute();
     }
@@ -234,9 +257,9 @@ public final class Loop {
         try{
             var image=new java.awt.image.BufferedImage(32,32,java.awt.image.BufferedImage.TYPE_INT_ARGB);Graphics2D g=image.createGraphics();
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(Ui.GREEN);g.fillOval(1,1,30,30);g.setColor(Color.WHITE);g.setStroke(new BasicStroke(3));g.drawOval(8,8,16,16);g.dispose();
-            PopupMenu menu=new PopupMenu();MenuItem open=new MenuItem("Open Loop"),quit=new MenuItem("Quit");trayPause=new MenuItem(workspace.paused()?"Resume":"Pause");menu.add(open);menu.add(trayPause);menu.addSeparator();menu.add(quit);
+            PopupMenu menu=new PopupMenu();MenuItem open=new MenuItem("Open RHI"),quit=new MenuItem("Quit");trayPause=new MenuItem(workspace.paused()?"Resume":"Pause");menu.add(open);menu.add(trayPause);menu.addSeparator();menu.add(quit);
             open.addActionListener(e->SwingUtilities.invokeLater(this::reveal));trayPause.addActionListener(e->SwingUtilities.invokeLater(workspace::togglePause));quit.addActionListener(e->SwingUtilities.invokeLater(this::quit));
-            tray=new TrayIcon(image,"Loop",menu);tray.setImageAutoSize(true);tray.addActionListener(e->SwingUtilities.invokeLater(this::reveal));SystemTray.getSystemTray().add(tray);
+            tray=new TrayIcon(image,"RHI",menu);tray.setImageAutoSize(true);tray.addActionListener(e->SwingUtilities.invokeLater(this::reveal));SystemTray.getSystemTray().add(tray);
         }catch(Exception e){tray=null;}
     }
     void reveal(){frame.setVisible(true);frame.setState(Frame.NORMAL);frame.toFront();}
@@ -258,8 +281,8 @@ public final class Loop {
             Path directory=Path.of(System.getProperty("user.home"),".loop");Files.createDirectories(directory);
             instanceChannel=java.nio.channels.FileChannel.open(directory.resolve("instance.lock"),StandardOpenOption.CREATE,StandardOpenOption.WRITE);
             instanceLock=instanceChannel.tryLock();
-            if(instanceLock==null){JOptionPane.showMessageDialog(null,"Loop is already running. Open it from the tray, or quit it there before restarting.");instanceChannel.close();return;}
-        }catch(Exception e){JOptionPane.showMessageDialog(null,"Could not open the Loop workspace: "+e.getMessage());return;}
+            if(instanceLock==null){JOptionPane.showMessageDialog(null,"RHI is already running. Open it from the tray, or quit it there before restarting.");instanceChannel.close();return;}
+        }catch(Exception e){JOptionPane.showMessageDialog(null,"Could not open your RHI data: "+e.getMessage());return;}
         SwingUtilities.invokeLater(()->{Ui.install();instance=new Loop();});
     }
 }

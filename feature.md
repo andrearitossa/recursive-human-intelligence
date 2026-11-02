@@ -1,8 +1,8 @@
-# Loop desktop app
+# RHI desktop app
 
 ## Current implementation
 
-Loop is a Java desktop app using the JDK standard library (Swing). It runs on Windows or Linux/WSL with JDK 17+. This replaces the earlier Electron and browser-only approaches, which could not provide dependable automatic filesystem access in Brave. The earlier HTML prototype remains in `app/`.
+RHI is a Java desktop app using the JDK standard library (Swing). It runs on Windows or Linux/WSL with JDK 17+. This replaces the earlier Electron and browser-only approaches, which could not provide dependable automatic filesystem access in Brave. The earlier HTML prototype remains in `app/`.
 
 The model interface supports **OpenAI, Claude, and OpenRouter**. Provider, endpoint, model ID, and credentials are configurable. The product logic does not depend on one model vendor. Keys are kept in memory or loaded from provider environment variables; chat excerpts are sent only when the model connection consent is enabled.
 
@@ -28,16 +28,16 @@ The Windows launcher finds a JDK 17+, compiles all Java sources, and runs local 
 ## Current limits
 
 - Persistence uses atomic local files rather than SQLite. There is no account, cloud sync, or signed installer.
-- Scheduled work requires Loop to stay running. Source exclusions apply to future imports; existing history remains until deleted.
+- Scheduled work requires RHI to stay running. Source exclusions apply to future imports; existing history remains until deleted.
 - Model analysis considers bounded batches, not every transcript in a single request. It cannot guarantee that every recurring workflow will be identified.
 - Generated transformations use an allowlist of deterministic text operations. Arbitrary generated scripts and automatic external actions are outside this implementation.
 - A provider-neutral `--search` CLI exposes saved solutions to agent harnesses. There is no MCP server or automatic next-session recommendation hook.
 
 ## Product idea
 
-Loop is a simple desktop companion for agentic tools such as Claude Code, Codex, Pi, and other harnesses. It notices recurring tasks and friction in a user's interactions, then helps create a durable solution: a reference, a tailored lesson, a reusable workflow, a script, or a small interactive tool. The goal is to empower users over time, save repeated effort, and make useful solutions easy to find again.
+RHI is a simple desktop companion for agentic tools such as Claude Code, Codex, Pi, and other harnesses. It notices recurring tasks and friction in a user's interactions, then helps create a durable solution: a reference, a tailored lesson, a reusable workflow, a script, or a small interactive tool. The goal is to empower users over time, save repeated effort, and make useful solutions easy to find again.
 
-Examples include a personalized Docker reference or lesson when a user repeatedly asks for Docker help, a reusable email editing tool for recurring email work, or a script that automates repeated spreadsheet cleanup. Repetition alone does not prove that a user wants to learn; Loop should distinguish between helping someone learn, helping them remember, and doing the task for them.
+Examples include a personalized Docker reference or lesson when a user repeatedly asks for Docker help, a reusable email editing tool for recurring email work, or a script that automates repeated spreadsheet cleanup. Repetition alone does not prove that a user wants to learn; RHI should distinguish between helping someone learn, helping them remember, and doing the task for them.
 
 ## Product shape
 
@@ -54,19 +54,19 @@ Harness adapters → Local history → Opportunity analysis
 
 ## User experience
 
-1. The user connects a harness and chooses which projects or conversations Loop may use.
-2. Loop reviews new interactions in the background and identifies recurring tasks or friction.
-3. When there is a useful opportunity, Loop prepares and validates a small solution, then notifies the user.
+1. The user connects a harness and chooses which projects or conversations RHI may use.
+2. RHI reviews new interactions in the background and identifies recurring tasks or friction.
+3. When there is a useful opportunity, RHI prepares and validates a small solution, then notifies the user.
 4. The user opens and uses the solution, finds it later in the library, and can give feedback or request an improvement.
-5. Loop uses feedback and outcomes to improve, retire, or stop suggesting solutions.
+5. RHI uses feedback and outcomes to improve, retire, or stop suggesting solutions.
 
 The app has three main screens:
 
-- **Home:** a featured new solution and saved tools. With no solutions yet, show: “Keep working. Loop will look for ways to make it easier.”
+- **Home:** a featured new solution and saved tools. With no solutions yet, show: “Keep working. RHI will look for ways to make it easier.”
 - **Tool:** the solution, a short explanation of why it was created, and **Improve**, **Useful**, and **Archive** actions.
 - **Settings:** connected harnesses, included projects, model connection, pause collection, and delete history.
 
-The tray menu offers **Open Loop**, **Pause**, and **Quit**. Notifications should be specific and respectful, for example: “You’ve cleaned up this report format a few times. Your report cleaner is ready.”
+The tray menu offers **Open RHI**, **Pause**, and **Quit**. Notifications should be specific and respectful, for example: “You’ve cleaned up this report format a few times. Your report cleaner is ready.”
 
 ## Product principles
 
@@ -102,8 +102,8 @@ Generated tools must run with limited permissions. For example, an interactive H
 
 ## First demonstration
 
-Use a small set of conversations about repeatedly cleaning the same CSV format. Loop identifies the recurring task, creates and validates a drag-and-drop cleaner, notifies the user, and successfully transforms a new file. The user can rate it, request a change, or archive it.
+Use a small set of conversations about repeatedly cleaning the same CSV format. RHI identifies the recurring task, creates and validates a drag-and-drop cleaner, notifies the user, and successfully transforms a new file. The user can rate it, request a change, or archive it.
 
 ## Success criterion
 
-Users return to a Loop solution because it helps them finish their work. The first release should demonstrate one recurring task made measurably easier and a feedback loop that improves the solution based on user input.
+Users return to a RHI solution because it helps them finish their work. The first release should demonstrate one recurring task made measurably easier and a feedback loop that improves the solution based on user input.

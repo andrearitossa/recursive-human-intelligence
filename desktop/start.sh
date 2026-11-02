@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 if ! command -v javac >/dev/null || ! command -v java >/dev/null; then
-  echo 'Loop requires a JDK 17 or newer. Install one, then run desktop/start.sh again.' >&2
+  echo 'RHI requires a JDK 17 or newer. Install one, then run desktop/start.sh again.' >&2
   exit 1
 fi
 mkdir -p build

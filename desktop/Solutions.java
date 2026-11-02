@@ -153,12 +153,6 @@ final class Solutions {
     }
     void feedback(Tool tool,String type,String text)throws IOException{tool.feedback.add(Map.of("date",System.currentTimeMillis(),"type",type,"text",text));try{save();}catch(IOException error){tool.feedback.remove(tool.feedback.size()-1);throw error;}}
     void restore(Tool tool,int index)throws IOException{Map<String,Object> v=new LinkedHashMap<>(tool.versions.get(index));v.put("date",System.currentTimeMillis());v.put("change","Restored version "+(index+1));tool.versions.add(v);try{save();}catch(IOException error){tool.versions.remove(tool.versions.size()-1);throw error;}}
-    /** Keeps a suggestion from step 2 in the library. Its evidence was already checked against what was sent. */
-    void saveSuggestion(String topic,String title,String description,String content,List<String> steps,List<String> evidence)throws IOException{
-        Tool t=new Tool();t.id=UUID.randomUUID().toString();t.topic=topic;t.title=title;t.description=description;t.kind="reference";t.evidence.addAll(evidence);
-        Map<String,Object> v=new LinkedHashMap<>();v.put("date",System.currentTimeMillis());v.put("content",content);v.put("steps",steps);v.put("quiz",List.of());v.put("operations",List.of());t.versions.add(v);
-        tools.add(t);try{save();}catch(IOException error){tools.remove(t);throw error;}
-    }
     void clear()throws IOException{if(Files.exists(directory)){try(var files=Files.list(directory)){for(Path file:files.filter(p->p.getFileName().toString().matches("[0-9a-fA-F-]{36}\\.html")).toList())Files.deleteIfExists(file);}}Files.deleteIfExists(directory.resolve("solutions.json"));tools.clear();analyzed.clear();lastSuggestion=0;}
     String searchIndex(){return tools.stream().filter(t->!t.archived).map(t->t.title+"\n"+t.description+"\n"+directory.resolve(t.id+".html")).reduce("",(a,b)->a+"\n"+b);}
 }

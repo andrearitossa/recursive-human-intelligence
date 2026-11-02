@@ -35,6 +35,14 @@ final class FeatureChecks {
             engine.save(temp.resolve("history.tsv"));engine.stamps.put(temp.resolve("source.jsonl"),new ChatEngine.Stamp(1,2,true));engine.saveIndex(temp.resolve("index.tsv"));ChatEngine copy=new ChatEngine();copy.load(temp.resolve("history.tsv"));copy.loadIndex(temp.resolve("index.tsv"));check(copy.stamps.size()==1,"Incremental index persistence");
         }finally{try(var paths=Files.walk(temp)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.delete(path);}}
         harnessFilter();patternChecks();
+        long[] used={-1,-1};
+        check(Models.delta(Models.Provider.OPENAI,"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",used).equals("hi"),"OpenAI stream text");
+        check(Models.delta(Models.Provider.CLAUDE,"data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"hi\"}}",used).equals("hi"),"Claude stream text");
+        check(Models.delta(Models.Provider.OPENAI,"data: [DONE]",used).isEmpty()&&Models.delta(Models.Provider.OPENAI,": ping",used).isEmpty(),"Stream control lines ignored");
+        Models.delta(Models.Provider.OPENAI,"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}",used);check(used[0]==7&&used[1]==3,"Stream usage read");
+        List<String> got=new ArrayList<>();ItemStream items=new ItemStream(m->got.add(Json.text(m.get("name"))));
+        String answer="```json\n{\"items\":[{\"name\":\"a}{\\\"\",\"x\":{\"y\":1}},{\"name\":\"b\"},{\"name\":\"cut";
+        for(char c:answer.toCharArray())items.accept(String.valueOf(c));check(got.equals(List.of("a}{\"","b")),"Complete items emitted as they arrive: "+got);
         System.out.println("Provider, evidence, library, artifact, and feedback checks passed.");
     }
     static void harnessFilter()throws Exception{
@@ -79,12 +87,15 @@ final class FeatureChecks {
         Patterns.Result result=Patterns.analyze(requests);check(result.requests()==24,"Replayed messages counted once");
         check(result.groups().size()>=2,"Separate topics found: "+result.groups().size());
         for(Patterns.Group g:result.groups()){boolean d=g.items.stream().anyMatch(i->i.request().text().contains("docker")),c=g.items.stream().anyMatch(i->i.request().text().contains("resume"));check(!(d&&c),"Topics stay apart");}
-        Map<String,Patterns.Item> refs=new HashMap<>();Insights.input(result.groups(),refs);check(refs.size()>=2,"Excerpts referenced");
-        String[] keys=refs.keySet().toArray(new String[0]);
-        String good="{\"findings\":[{\"problem\":\"p\",\"rootCause\":\"c\",\"confidence\":\"high\",\"evidence\":[\""+keys[0]+"\",\""+keys[1]+"\"],\"suggestions\":[{\"type\":\"learn\",\"title\":\"t\",\"why\":\"w\",\"firstStep\":\"f\",\"payoff\":\"x\"},{\"type\":\"shell\",\"title\":\"t\",\"firstStep\":\"f\"}]}]}";
-        var findings=Insights.parse(good,refs);check(findings.size()==1&&findings.get(0).suggestions().size()==1,"Valid finding kept, unknown type dropped");
-        boolean rejected=false;try{Insights.parse(good.replace(keys[0],"r999"),refs);}catch(java.io.IOException expected){rejected=true;}check(rejected,"Invented evidence rejected");
-        check(Insights.parse(good.replace(",\""+keys[1]+"\"",""),refs).isEmpty(),"Finding with one quote dropped");
+        Map<String,Patterns.Item> refs=new HashMap<>();Map<String,String> tasks=new HashMap<>();List<Patterns.Item> every=Patterns.distinct(requests);for(Patterns.Item i:every)tasks.put(i.id(),"task");
+        String sent=Insights.input(result.groups(),every,tasks,refs,"",List.of(),Patterns.signals(requests));check(refs.containsKey("t24")&&sent.contains("t24: task"),"Agent reads every request");
+        String good="{\"items\":[{\"name\":\"n\",\"description\":\"d\",\"message\":\"m\",\"actions\":[{\"text\":\"do\",\"source\":\"Book\"}],\"evidence\":[\"t1\",\"t2\"]},{\"name\":\"bad\",\"description\":\"d\",\"actions\":[{\"text\":\"do\"}],\"evidence\":[\"t1\",\"r999\"]},{\"name\":\"thin\",\"description\":\"d\",\"actions\":[{\"text\":\"do\"}],\"evidence\":[\"t1\"]}]}";
+        var findings=Insights.parse(good,refs);check(findings.size()==1&&findings.get(0).actions().get(0).source().equals("Book"),"Item kept; invented or thin evidence dropped");
+        check(Insights.parse(good.replace("\"message\":\"m\"","\"message\":\"m\",\"you\":\"never typed this\",\"better\":\"b\""),refs).get(0).you().isEmpty(),"Invented quote dropped");
+        check(Insights.parse(good.replace("\"message\":\"m\"","\"message\":\"m\",\"you\":\"Docker Compose volume\",\"better\":\"b\""),refs).get(0).better().equals("b"),"Real quote kept");
+        Map<String,ChatEngine.Request> said=new LinkedHashMap<>();for(int i=0;i<5;i++){ChatEngine.Request x=new ChatEngine.Request("c"+i,"please keep simple and sexy for page "+"abcde".charAt(i));said.put(ChatEngine.id(x),x);}
+        check(String.valueOf(Patterns.signals(said).get("phrasesRetypedAcrossChats")).contains("simple and sexy"),"Retyped phrases measured");
+        boolean rejected=false;try{Insights.parse("{}",refs);}catch(java.io.IOException expected){rejected=true;}check(rejected,"Missing items reported");
         Path aiDir=Files.createTempDirectory("loop-ai-");
         try{
             int[] calls={0};
@@ -109,6 +120,6 @@ final class FeatureChecks {
             check(cut.pending(requests).isEmpty()&&cut.hasPatterns(),"Cut-off answers recover by splitting");cut.clear();
             LlmPatterns broken=new LlmPatterns(aiDir);boolean threw=false;try{broken.run((x,y)->"not json",requests,"",(stage,d,t,l)->{});}catch(Exception expected){threw=true;}check(threw,"All batches failing is reported");
         }finally{try(var p=Files.walk(aiDir)){for(Path x:p.sorted(Comparator.reverseOrder()).toList())Files.delete(x);}}
-        Path dir=Files.createTempDirectory("loop-insights-");try{Insights.save(dir,List.of(new Insights.Report(5,"All",findings)));var back=Insights.load(dir);check(back.size()==1&&back.get(0).findings().get(0).suggestions().get(0).type().equals("learn"),"Reports persist");}finally{try(var p=Files.walk(dir)){for(Path x:p.sorted(Comparator.reverseOrder()).toList())Files.delete(x);}}
+        Path dir=Files.createTempDirectory("loop-insights-");try{Insights.save(dir,List.of(findings.get(0).asRemoved()));var back=Insights.load(dir);check(back.size()==1&&back.get(0).removed()&&back.get(0).actions().size()==1,"Feedback and removal persist");}finally{try(var p=Files.walk(dir)){for(Path x:p.sorted(Comparator.reverseOrder()).toList())Files.delete(x);}}
     }
 }

@@ -15,7 +15,7 @@ final class Workspace extends JPanel {
     final Ui.Stack cards=new Ui.Stack();
     final JTextField search=new JTextField(20);
     final JCheckBox archived=new JCheckBox("Show archived");
-    final JButton analyze=Ui.primary("Find opportunities"),pause=Ui.button("Pause");
+    final JButton analyze=Ui.primary("Get feedback"),pause=Ui.button("Pause");
     final JLabel summary=Ui.muted("");
     final JPanel settingsPanel=new JPanel(new BorderLayout());
     final JComboBox<Models.Provider> provider=new JComboBox<>(Models.Provider.values());
@@ -23,13 +23,15 @@ final class Workspace extends JPanel {
     final JPasswordField key=new JPasswordField();
     final JLabel keyHint=Ui.muted("");
     final JTextArea excluded=new JTextArea(3,40);
-    final JCheckBox consent=new JCheckBox("Allow selected chat excerpts to be sent to this provider"),schedule=new JCheckBox("Check for new chats every 5 minutes while Loop runs"),notify=new JCheckBox("Desktop notifications"),codex=new JCheckBox("Codex"),claude=new JCheckBox("Claude"),pi=new JCheckBox("Pi"),cross=new JCheckBox("Also look in other Windows / WSL profiles");
+    final JCheckBox consent=new JCheckBox("Allow selected chat excerpts to be sent to this provider"),schedule=new JCheckBox("Check for new chats every 5 minutes while RHI runs"),notify=new JCheckBox("Desktop notifications"),codex=new JCheckBox("Codex"),claude=new JCheckBox("Claude"),pi=new JCheckBox("Pi"),cross=new JCheckBox("Also look in other Windows / WSL profiles");
     final JButton test=Ui.button("Test connection"),manage=Ui.button("Added folders"),forget=Ui.button("Delete history");
     final Map<Models.Provider,String> sessionKeys=new EnumMap<>(Models.Provider.class);
     Models.Provider shownProvider;
     SwingWorker<?,?> job;
     volatile Thread workerThread;
     JDialog openTool;
+    boolean thinking,flowing;
+    JScrollPane homeScroll;
     JScrollPane settingsScroll;
     javax.swing.Timer timer;
 
@@ -39,10 +41,10 @@ final class Workspace extends JPanel {
         setLayout(new BorderLayout(0,14));setOpaque(false);
         JLabel searchLabel=new JLabel("Search");archived.setOpaque(false);
         Ui.Stack heading=new Ui.Stack();
-                JPanel controls=new JPanel(new BorderLayout());controls.setOpaque(false);JPanel searchRow=new JPanel(new GridBagLayout());searchRow.setOpaque(false);searchRow.add(Ui.row(searchLabel,search,archived));controls.add(searchRow,BorderLayout.WEST);controls.add(analyze,BorderLayout.EAST);
+                JPanel controls=new JPanel(new BorderLayout());controls.setOpaque(false);JPanel searchRow=new JPanel(new GridBagLayout());searchRow.setOpaque(false);searchRow.add(Ui.row(searchLabel,search,archived));controls.add(searchRow,BorderLayout.WEST);Ui.field(search);controls.add(analyze,BorderLayout.EAST);
         heading.put(controls);heading.put(summary,6);add(heading,BorderLayout.NORTH);
-        add(Ui.scroll(cards),BorderLayout.CENTER);
-        analyze.addActionListener(e->analyze(true));archived.addActionListener(e->refresh());
+        homeScroll=Ui.scroll(cards);add(homeScroll,BorderLayout.CENTER);
+        analyze.addActionListener(e->findProblems());archived.addActionListener(e->refresh());
         search.getDocument().addDocumentListener(new DocumentListener(){
             @Override public void insertUpdate(DocumentEvent e){refresh();}
             @Override public void removeUpdate(DocumentEvent e){refresh();}
@@ -60,29 +62,69 @@ final class Workspace extends JPanel {
         if(host.trayPause!=null)host.trayPause.setLabel(paused()?"Resume":"Pause");
         refresh();host.status.setText(paused()?"Paused.":"Resumed.");
     }
-    void setBusy(boolean active){analyze.setEnabled(!active);test.setEnabled(!active);forget.setEnabled(!active);manage.setEnabled(!active);}
+    void setBusy(boolean active){if(!active)SwingUtilities.invokeLater(()->{if(!host.busy&&(thinking||flowing)){thinking=false;flowing=false;refresh();}});analyze.setEnabled(!active);test.setEnabled(!active);forget.setEnabled(!active);manage.setEnabled(!active);}
 
+    /** The single action. With a model it finds problems; without one it offers the built-in tools. */
+    void findProblems(){
+        if(host.busy)return;
+        if(paused()){host.status.setText("Paused. Resume in Settings.");return;}
+        Models.Model connection=connectOrAsk();
+        if(connection==null){if(useLocal){useLocal=false;flowing=true;host.scan(()->analyze(true));}return;}
+        flowing=true;refresh();Activity.log("Get feedback: checking for new chats");
+        host.scan(()->{
+            if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Add a folder in Chats.");return;}
+            flowing=true;host.patterns.flow(connection);
+        });
+    }
+    private boolean useLocal;
+    /** The model connection, asking for whatever is missing right here instead of sending anyone to Settings. */
+    Models.Model connectOrAsk(){
+        try{Models.Model ready=connection();if(ready!=null)return ready;}catch(Exception ignored){}
+        JComboBox<Models.Provider> pick=new JComboBox<>(Models.Provider.values());pick.setSelectedItem(provider.getSelectedItem());pick.setBackground(Color.WHITE);
+        JTextField id=Ui.field(new JTextField(model.getText(),28));JPasswordField secret=Ui.field(new JPasswordField(new String(key.getPassword()),28));
+        JCheckBox allow=new JCheckBox("Send my chat excerpts to this provider",consent.isSelected());allow.setOpaque(false);
+        pick.addActionListener(e->{Models.Provider p=(Models.Provider)pick.getSelectedItem();id.setText(host.settings.getProperty("model."+p.name(),""));secret.setText(sessionKeys.getOrDefault(p,""));});
+        Object[] form={"RHI uses your own AI account to read your chats.",new JLabel("Provider"),pick,new JLabel("Model ID"),id,new JLabel("API key (not saved)"),secret,allow};
+        String[] options={"Connect","Local tools only","Cancel"};
+        while(true){
+            int choice=JOptionPane.showOptionDialog(host.frame,form,"Connect your AI",JOptionPane.DEFAULT_OPTION,JOptionPane.PLAIN_MESSAGE,null,options,options[0]);
+            if(choice==1)useLocal=true;
+            if(choice!=0)return null;
+            if(!allow.isSelected()){JOptionPane.showMessageDialog(host.frame,"Tick the box to allow sending excerpts, or choose Local tools only.","Connect your AI",JOptionPane.INFORMATION_MESSAGE);continue;}
+            provider.setSelectedItem(pick.getSelectedItem());model.setText(id.getText().strip());key.setText(new String(secret.getPassword()));consent.setSelected(true);
+            try{persistForm();Models.Model ready=connection();refresh();return ready;}catch(Exception e){JOptionPane.showMessageDialog(host.frame,message(e),"Connect your AI",JOptionPane.ERROR_MESSAGE);}
+        }
+    }
+    private int homeAt=-1;
+    void scrollHomeToTop(){homeAt=0;restoreHome();}
+    /** Items arriving must not move what someone is reading, so the position survives each rebuild. */
+    private void restoreHome(){SwingUtilities.invokeLater(()->SwingUtilities.invokeLater(()->{if(homeAt>=0){homeScroll.getVerticalScrollBar().setValue(homeAt);homeAt=-1;}}));}
     // ---- Home ----
     void refresh(){
+        if(homeScroll!=null){if(homeAt<0)homeAt=homeScroll.getVerticalScrollBar().getValue();restoreHome();}
         cards.removeAll();pause.setText(paused()?"Resume":"Pause");
-        summary.setText(paused()?"Paused. Loop will not import or analyze until you resume in Settings.":"");summary.setVisible(paused());
-        boolean any=!store.tools.isEmpty();search.getParent().setVisible(any);
+        summary.setText(paused()?"Paused. RHI will not import or analyze until you resume in Settings.":"");summary.setVisible(paused());
+        boolean any=store.tools.stream().anyMatch(t->!t.archived)||archived.isSelected()||!search.getText().isEmpty();search.getParent().getParent().setVisible(any);
         String query=search.getText().strip().toLowerCase(Locale.ROOT);
         List<Solutions.Tool> shown=new ArrayList<>();
         for(Solutions.Tool t:store.tools)if(t.archived==archived.isSelected()&&(t.title+" "+t.description+" "+t.topic).toLowerCase(Locale.ROOT).contains(query))shown.add(t);
         Collections.reverse(shown); // Newest first.
         boolean feature=query.isEmpty()&&!archived.isSelected();
-        for(int i=0;i<shown.size();i++)cards.put(card(shown.get(i),feature&&i==0&&isNew(shown.get(i))),i==0?0:12);
-        if(shown.isEmpty())cards.put(emptyState(query));
+        if((thinking||flowing)&&feature&&!findingsVisible()){JProgressBar bar=new JProgressBar();bar.setIndeterminate(true);bar.setBorderPainted(false);bar.setForeground(Ui.GREEN);bar.setBackground(Ui.LINE);bar.setPreferredSize(new Dimension(100,4));cards.put(Ui.label("Reading everything you asked…",Ui.serif(20),Ui.INK),30);cards.put(Ui.muted("Your feedback appears here as it is written."),4);cards.put(bar,12);cards.put(Box.createVerticalStrut(24));}
+        if(feature&&host.patterns!=null&&host.patterns.hasFeedback()){cards.put(Ui.section("Feedback"));cards.put(host.patterns.results,8);if(!shown.isEmpty())cards.put(Ui.section("Saved"),26);}
+        for(int i=0;i<shown.size();i++)cards.put(card(shown.get(i),feature&&i==0&&isNew(shown.get(i))),i==0?8:12);
+        boolean findings=feature&&host.patterns!=null&&host.patterns.hasFeedback();
+        if(shown.isEmpty()&&!findings&&!thinking&&!flowing)cards.put(emptyState(query));
         cards.end();cards.revalidate();cards.repaint();
     }
+    private boolean findingsVisible(){return host.patterns!=null&&host.patterns.hasFeedback();}
     static boolean isNew(Solutions.Tool tool){return System.currentTimeMillis()-Solutions.number(tool.versions.get(0).get("date"))<Solutions.WEEK;}
     private JComponent emptyState(String query){
         Ui.Stack empty=new Ui.Stack();
         if(!query.isEmpty())return empty.put(Ui.muted("No solutions match “"+query+"”."),8);
         if(archived.isSelected())return empty.put(Ui.muted("Archived solutions will appear here."),8);
-        empty.put(Ui.label("Keep working. Loop will look for ways to make it easier.",Ui.serif(20),Ui.INK),30);
-        if(host.engine.requests.isEmpty()){JButton go=Ui.button("Import your chats");go.addActionListener(e->host.scan());empty.put(Ui.row(go),14);}
+        empty.put(Ui.label("Keep working. RHI will look for ways to make it easier.",Ui.serif(24),Ui.INK),60);
+        JButton go=Ui.primary("Get feedback");go.addActionListener(e->findProblems());empty.put(Ui.row(go),18);
         return empty;
     }
     private JComponent card(Solutions.Tool tool,boolean featured){
@@ -140,7 +182,7 @@ final class Workspace extends JPanel {
         JPanel root=new JPanel(new BorderLayout(0,10));root.setBorder(new EmptyBorder(16,18,16,18));root.setTransferHandler(drop);
         JScrollPane scroll=new JScrollPane(preview);scroll.setBorder(new LineBorder(Ui.LINE));root.add(scroll,BorderLayout.CENTER);
         JPanel bottom=new JPanel(new BorderLayout());bottom.add(state,BorderLayout.CENTER);bottom.add(Ui.row(pick,saveAs),BorderLayout.EAST);root.add(bottom,BorderLayout.SOUTH);
-        dialog.setContentPane(root);dialog.setSize(760,520);dialog.setLocationRelativeTo(host.frame);dialog.setVisible(true);
+        dialog.setContentPane(root);dialog.setSize(760,520);dialog.setLocationRelativeTo(host.frame);Ui.closeOnEscape(dialog);dialog.setVisible(true);
     }
 
     // ---- Tool details ----
@@ -155,8 +197,8 @@ final class Workspace extends JPanel {
         Set<String> sessions=new HashSet<>();List<ChatEngine.Request> found=new ArrayList<>();
         for(String id:tool.evidence){ChatEngine.Request r=host.engine.requests.get(id);if(r!=null){found.add(r);sessions.add(r.session());}}
         body.put(Ui.section("Why this exists"),18);
-        body.put(Ui.prose(found.isEmpty()?"Its source requests are no longer in your imported history.":"You asked for something similar "+found.size()+(found.size()==1?" time":" times")+" across "+sessions.size()+" separate sessions. A few of those requests:",Ui.INK),6);
-        for(ChatEngine.Request r:found.subList(Math.max(0,found.size()-5),found.size())){String t=r.text().strip();body.put(Ui.prose("“"+(t.length()>220?t.substring(0,220)+"…":t)+"”",Ui.MUTED),6);}
+        body.put(Ui.prose(found.isEmpty()?"Its source requests are no longer in your imported history.":"You asked for something similar "+found.size()+(found.size()==1?" time":" times")+" across "+sessions.size()+" separate sessions.",Ui.INK),6);
+        for(ChatEngine.Request r:found.subList(Math.max(0,found.size()-3),found.size())){String t=r.text().strip().replaceAll("\\s+"," ");body.put(Ui.prose("“"+(t.length()>140?t.substring(0,140)+"…":t)+"”",Ui.MUTED),6);}
         if(!tool.feedback.isEmpty()){body.put(Ui.section("Your feedback"),18);for(var f:tool.feedback)body.put(Ui.prose(new Date(Solutions.number(f.get("date"))).toString().substring(4,10)+":  "+Json.text(f.get("text")),Ui.MUTED),4);}
         body.end();
         JLabel state=Ui.muted(" ");
@@ -169,7 +211,7 @@ final class Workspace extends JPanel {
         archive.addActionListener(e->guarded(state,()->{
             boolean previous=tool.archived;tool.archived=!previous;
             try{store.save();}catch(IOException error){tool.archived=previous;throw error;}
-            dialog.dispose();refresh();host.status.setText(tool.title+(tool.archived?" archived. Loop will not suggest this topic again.":" restored."));
+            dialog.dispose();refresh();host.status.setText(tool.title+(tool.archived?" archived. RHI will not suggest this topic again.":" restored."));
         }));
         improve.addActionListener(e->improve(tool,dialog));
         versions.addActionListener(e->guarded(state,()->{
@@ -179,9 +221,9 @@ final class Workspace extends JPanel {
             if(selected!=null){store.restore(tool,Arrays.asList(options).indexOf(selected.toString()));refresh();details(tool);}
         }));
         JPanel bottom=new JPanel(new BorderLayout(0,8));bottom.setBorder(new CompoundBorder(new MatteBorder(1,0,0,0,Ui.LINE),new EmptyBorder(12,24,14,24)));
-        bottom.add(state,BorderLayout.NORTH);bottom.add(Ui.row(open,improve,markUseful,markDelegate,archive,versions),BorderLayout.CENTER);
-        JPanel root=new JPanel(new BorderLayout());root.add(Ui.scroll(body),BorderLayout.CENTER);root.add(bottom,BorderLayout.SOUTH);
-        dialog.setContentPane(root);dialog.setSize(780,640);dialog.setLocationRelativeTo(host.frame);dialog.setVisible(true);
+        versions.setVisible(tool.versions.size()>1);bottom.add(state,BorderLayout.NORTH);bottom.add(Ui.row(open,improve,markUseful,markDelegate,archive,versions),BorderLayout.CENTER);
+        JPanel root=new JPanel(new BorderLayout());JScrollPane toolScroll=Ui.scroll(body);root.add(toolScroll,BorderLayout.CENTER);root.add(bottom,BorderLayout.SOUTH);
+        dialog.setContentPane(root);dialog.setSize(780,640);dialog.setLocationRelativeTo(host.frame);Ui.closeOnEscape(dialog);dialog.setVisible(true);SwingUtilities.invokeLater(()->toolScroll.getVerticalScrollBar().setValue(0));
     }
     private interface Action{void run()throws Exception;}
     private void guarded(JLabel state,Action action){
@@ -245,7 +287,7 @@ final class Workspace extends JPanel {
     void notification(Solutions.Tool tool){
         if(!notify.isSelected()||host.tray==null)return;
         Set<String> sessions=new HashSet<>();for(String id:tool.evidence){var r=host.engine.requests.get(id);if(r!=null)sessions.add(r.session());}
-        host.tray.displayMessage(tool.title+" is ready","This came up in "+sessions.size()+" separate sessions, so Loop made something for it.",TrayIcon.MessageType.INFO);
+        host.tray.displayMessage(tool.title+" is ready","This came up in "+sessions.size()+" separate sessions, so RHI made something for it.",TrayIcon.MessageType.INFO);
     }
     boolean enabled(String tool){return switch(tool){case "Codex"->codex.isSelected();case "Claude"->claude.isSelected();case "Pi"->pi.isSelected();default->true;};}
 
@@ -291,7 +333,7 @@ final class Workspace extends JPanel {
         catch(Exception e){host.status.setText(message(e));}
     }
     private static JCheckBox check(JCheckBox box){box.setOpaque(false);box.setBorder(new EmptyBorder(2,0,2,10));return box;}
-    private static void field(Ui.Stack form,String label,JComponent input){JLabel l=new JLabel(label);l.setBorder(new EmptyBorder(12,0,5,0));form.put(l);if(!(input instanceof JComboBox))input.setBorder(new CompoundBorder(new LineBorder(Ui.LINE),new EmptyBorder(6,8,6,8)));else input.setBackground(Color.WHITE);form.put(input);}
+    private static void field(Ui.Stack form,String label,JComponent input){JLabel l=new JLabel(label);l.setBorder(new EmptyBorder(12,0,5,0));form.put(l);if(input instanceof javax.swing.text.JTextComponent t)Ui.field(t);else input.setBackground(Color.WHITE);form.put(input);}
     void loadProvider(Models.Provider p){shownProvider=p;endpoint.setText(host.settings.getProperty("endpoint."+p.name(),p.endpoint));model.setText(host.settings.getProperty("model."+p.name(),""));key.setText(sessionKeys.getOrDefault(p,""));updateKeyHint();}
     private void updateKeyHint(){Models.Provider p=shownProvider;keyHint.setText(System.getenv(p.keyEnv)!=null?"Using "+p.keyEnv+" unless you paste a key.":"Or set "+p.keyEnv+" to avoid pasting it each time.");}
     void persistForm()throws IOException{

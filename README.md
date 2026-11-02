@@ -1,6 +1,8 @@
-# Loop
+# RHI: Recursive Human Intelligence
 
-A Java desktop companion that turns recurring work into personal tools.
+AI improves itself recursively. Why shouldn't you?
+
+RHI reads your chats with AI assistants and hands you feedback, sources, and tools so the same questions stop coming back.
 
 ## Start on Windows
 
@@ -12,21 +14,16 @@ Requires JDK 17+. The launcher finds an installed JDK even when an older Java co
 
 Or launch `desktop/start.bat` from your checkout. It compiles all sources, runs local checks, and opens Loop. UNC/WSL folders are handled with `pushd`. On Linux/WSL with a graphical desktop, use `./desktop/start.sh`.
 
-## Use the loop
+## Use it
 
-1. On **Chats**, **Import chats** reads default Codex, Claude, and Pi folders. **Add folder** adds a chat folder or a home folder. Select chats and choose **Remove** (or press Delete) to take them out of Loop; they stay out on later imports, **Undo** brings them back, and original files are untouched.
-2. Open **Settings** and choose sources, exclusions, schedule, notifications, and model connection.
-3. On **Home**, click **Find opportunities**. Without a model, built-in CSV and Docker tools appear after three sessions that ask for that help. A passing mention does not count.
-4. Open a solution, or choose **Details** to see evidence, give feedback, archive, revise, or restore a previous version.
+Click **Get feedback** on Home. That one button does everything in order: asks for your AI connection if it is missing, checks for new chats, reads and groups what is new, and writes your feedback. Items appear as they arrive, and you can open them while it is still working.
 
-Scheduled checks are opt-in and run every five minutes while Loop is running. Automatic suggestions have a weekly cooldown. Manual analysis bypasses the cooldown. Closing the window hides it to the tray where supported, and running work continues; use tray **Quit** to exit. **Pause** stops new imports and analysis and requests that active work stop. Filesystem calls to offline network folders may take time to return.
+**Patterns** and **Chats** are there to explore and to narrow things down; you never need them. The **>** at the bottom opens logs of each step: API calls with sizes, timing, and tokens, what each batch produced, each pattern and item as it lands, and anything dropped and why. Logs show model-written names, never keys or your messages.
 
 ## Patterns
 
-**Patterns** shows two steps.
-
-1. **Your patterns** starts as a quick local keyword map, with nothing sent. **Analyze with AI** reads your requests in batches of up to 250, keeping similar ones together, using the model from Settings, after stating how much will be sent. The map grows by area as batches return, then settles into named patterns grouped from the short descriptions alone. Results are saved, so later runs read only new requests. Chats are always counted locally. **Focus on** is optional and steers grouping and findings. Click bubbles to choose what to analyze, or click a color to filter.
-2. **What to do** sends the selection's statistics and up to 14 short excerpts per pattern (20 for the frustration pattern) to your model. It returns the problem, its root cause, and concrete suggestions (workflow, learn, automate, reference, habit, or tool), each with a first step. Findings must quote at least two provided messages. Reports are saved locally, and any suggestion can be saved to Home.
+1. **Patterns** starts as a quick local keyword map, with nothing sent. **Analyze with AI** reads your requests in batches of up to 250, keeping similar ones together, using the model from Settings, after stating how much will be sent. The map grows by area as batches return, then settles into named patterns grouped from the short descriptions alone. Results are saved, so later runs read only new requests. Chats are always counted locally. **Focus on** is optional and steers grouping and findings. Click bubbles to choose what to analyze, or click a color to filter.
+2. **Get feedback**, on Home or Patterns, opens Home and sends the one-line description of every request, plus excerpts from your patterns, to your model. It returns a short list of named items. Click one for the detail, what to do, and a search for any source it names. Items must quote at least two real messages. Phrases you retype across chats are measured locally and shown to the agent. **Mark as done** moves an item to a hidden list below, where **Undo** brings it back, and it will not be suggested again.
 
 ## Connect a model
 
@@ -68,5 +65,4 @@ The command returns JSON with title, description, version, and a standalone arti
 
 The Windows launcher runs the same checks: transcript formats, harness-text filtering, project exclusions, deduplication, cancellation, persistence, provider formats, evidence validation, cooldowns, feedback, revision and restore, CSV delimiters and encodings, redaction, and artifact escaping.
 
-`desktop/ui-test/run.sh Drive` runs Loop's real window end to end from WSL with the Windows JDK: real controls, a throwaway home, and a fake local provider. It opens the window off-screen and draws only Loop's own components to images. `RealImport` reports counts from real transcripts without printing their text.
-# recursive-human-intelligence
+`desktop/ui-test/run.sh Drive` runs RHI's real window end to end from WSL with the Windows JDK: real controls, a throwaway home, and a fake local provider. It opens the window off-screen and draws only RHI's own components to images. `RealImport` reports counts from real transcripts without printing their text.
