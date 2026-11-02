@@ -27,8 +27,16 @@ public class Demo{
  }
  static Map<String,Object> item(String n,String d,String m,String y,String b,String a,String s,List<String> ev){return Map.of("name",n,"description",d,"message",m,"you",y,"better",b,"actions",List.of(Map.of("text",a,"source",s)),"evidence",ev.subList(0,3));}
  static BufferedImage paint(Window w)throws Exception{BufferedImage[] o=new BufferedImage[1];SwingUtilities.invokeAndWait(()->{Container p=((RootPaneContainer)w).getContentPane();BufferedImage i=new BufferedImage(p.getWidth(),p.getHeight(),1);Graphics2D g=i.createGraphics();p.printAll(g);g.dispose();o[0]=i;});return o[0];}
+ static long sq(int x){return (long)x*x;}
  static boolean same(BufferedImage a,BufferedImage b){if(a.getWidth()!=b.getWidth()||a.getHeight()!=b.getHeight())return false;return Arrays.equals(a.getRGB(0,0,a.getWidth(),a.getHeight(),null,0,a.getWidth()),b.getRGB(0,0,b.getWidth(),b.getHeight(),null,0,b.getWidth()));}
- static void snap(int ms)throws Exception{BufferedImage i=paint(source);int w=800,h=i.getHeight()*w/i.getWidth();BufferedImage s=new BufferedImage(w,h,1);Graphics2D g=s.createGraphics();g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BICUBIC);g.drawImage(i,0,0,w,h,null);g.dispose();if(!frames.isEmpty()&&same(frames.get(frames.size()-1),s)){delays.set(delays.size()-1,delays.get(delays.size()-1)+ms);return;}frames.add(s);delays.add(ms);}
+ static volatile String caption="";static final int W=800,H=544,BAR=46;
+ /** Every frame has one size: the app, optional detail window on top, and a caption bar. */
+ static void snap(int ms)throws Exception{
+  BufferedImage base=paint(l.frame);BufferedImage s=new BufferedImage(W,H+BAR,1);Graphics2D g=s.createGraphics();g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BICUBIC);g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+  g.setColor(Ui.BG);g.fillRect(0,0,W,H);g.drawImage(base,0,0,W,H,null);
+  if(source!=l.frame){BufferedImage d=paint(source);g.setColor(new Color(41,60,38,120));g.fillRect(0,0,W,H);int dw=Math.min(W-90,d.getWidth()),dh=d.getHeight()*dw/d.getWidth();dh=Math.min(dh,H-30);int x=(W-dw)/2,y=(H-dh)/2;g.setColor(Ui.BG);g.fillRoundRect(x-1,y-1,dw+2,dh+2,6,6);g.drawImage(d,x,y,dw,dh,null);}
+  g.setColor(Ui.GREEN);g.fillRect(0,H,W,BAR);g.setColor(Color.WHITE);g.setFont(Ui.sans(Font.BOLD,17));g.drawString(caption,(W-g.getFontMetrics().stringWidth(caption))/2,H+30);g.dispose();
+  if(!frames.isEmpty()&&same(frames.get(frames.size()-1),s)){delays.set(delays.size()-1,delays.get(delays.size()-1)+ms);return;}frames.add(s);delays.add(ms);}
  static void hold(int ms)throws Exception{long end=System.currentTimeMillis()+ms;while(System.currentTimeMillis()<end){snap(160);Thread.sleep(140);}}
  static void png(String n,Window w,File d)throws Exception{ImageIO.write(paint(w),"png",new File(d,n+".png"));}
  public static void main(String[] a)throws Exception{
@@ -41,21 +49,27 @@ public class Demo{
   Files.writeString(dir.resolve("settings.properties"),"cross=false\nnotifications=false\nconsent=true\nrememberKey=false\nprovider=OPENAI\nmodel.OPENAI=demo\nendpoint.OPENAI=http\\://localhost\\:"+port+"/v1\n");
   Loop.main(new String[0]);while(Loop.instance==null)Thread.sleep(50);l=Loop.instance;
   SwingUtilities.invokeAndWait(()->{l.frame.setFocusableWindowState(false);l.frame.setLocation(-4000,-4000);l.frame.setSize(1000,680);l.workspace.key.setText("demo");});Thread.sleep(600);source=l.frame;
-  hold(1500);SwingUtilities.invokeLater(l.workspace.analyze::doClick);
+  caption="One click. No setup screens.";hold(1300);caption="Your chats become patterns, live";SwingUtilities.invokeLater(l.workspace.analyze::doClick);
   Thread.sleep(250);SwingUtilities.invokeAndWait(()->l.select("Patterns"));
   long t0=System.currentTimeMillis();while(l.patterns.llm.saved.isEmpty()&&System.currentTimeMillis()-t0<30000){snap(160);Thread.sleep(140);}
-  SwingUtilities.invokeAndWait(()->l.select("Patterns"));Thread.sleep(700);hold(1500);png("patterns",l.frame,docs);SwingUtilities.invokeAndWait(()->l.select("Home"));
+  SwingUtilities.invokeAndWait(()->l.select("Patterns"));Thread.sleep(700);hold(1500);png("patterns",l.frame,docs);caption="Then honest feedback, item by item";SwingUtilities.invokeAndWait(()->l.select("Home"));
   t0=System.currentTimeMillis();while(l.busy&&System.currentTimeMillis()-t0<30000){snap(160);Thread.sleep(140);}
   hold(1400);png("feedback",l.frame,docs);
   Insights.Finding f=l.patterns.feedback.get(0);SwingUtilities.invokeLater(()->l.patterns.detail(f));Thread.sleep(500);JDialog d=null;for(Window w:Window.getWindows())if(w instanceof JDialog x&&x.isShowing())d=x;JDialog dd=d;SwingUtilities.invokeAndWait(()->{dd.setFocusableWindowState(false);dd.setLocation(-4000,0);});Thread.sleep(250);
-  png("detail",d,docs);source=d;hold(2600);
+  png("detail",d,docs);caption="What you wrote, and a sharper version";source=d;hold(3600);
+  // One exact palette from the real colors, with no dithering, so flat areas stay flat.
+  Map<Integer,Integer> counts=new HashMap<>();for(BufferedImage im:frames){int[] px=im.getRGB(0,0,im.getWidth(),im.getHeight(),null,0,im.getWidth());for(int v:px)counts.merge(v&0xffffff,1,Integer::sum);}
+  List<Integer> top=new ArrayList<>(counts.keySet());top.sort((x,y)->counts.get(y)-counts.get(x));if(top.size()>256)top=top.subList(0,256);
+  byte[] rr=new byte[256],gg=new byte[256],bb=new byte[256];for(int i=0;i<top.size();i++){int c=top.get(i);rr[i]=(byte)(c>>16);gg[i]=(byte)(c>>8);bb[i]=(byte)c;}
+  IndexColorModel cm=new IndexColorModel(8,256,rr,gg,bb);Map<Integer,Byte> near=new HashMap<>();List<Integer> pal=top;
   try(ImageOutputStream o=ImageIO.createImageOutputStream(new File(docs,"demo.gif"))){ImageWriter w=ImageIO.getImageWritersByFormatName("gif").next();w.setOutput(o);w.prepareWriteSequence(null);
-   int maxH=frames.stream().mapToInt(BufferedImage::getHeight).max().orElse(0);
-   for(int i=0;i<frames.size();i++){BufferedImage canvas=new BufferedImage(800,maxH,BufferedImage.TYPE_BYTE_INDEXED);Graphics2D g=canvas.createGraphics();g.setColor(Ui.BG);g.fillRect(0,0,800,maxH);g.drawImage(frames.get(i),0,0,null);g.dispose();
+   for(int i=0;i<frames.size();i++){BufferedImage im=frames.get(i);BufferedImage canvas=new BufferedImage(im.getWidth(),im.getHeight(),BufferedImage.TYPE_BYTE_INDEXED,cm);byte[] data=((DataBufferByte)canvas.getRaster().getDataBuffer()).getData();int[] px=im.getRGB(0,0,im.getWidth(),im.getHeight(),null,0,im.getWidth());
+    for(int k=0;k<px.length;k++){int v=px[k]&0xffffff;Byte b=near.get(v);if(b==null){int best=0;long bd=Long.MAX_VALUE;for(int q=0;q<pal.size();q++){int c=pal.get(q);long d3=sq((c>>16&255)-(v>>16&255))+sq((c>>8&255)-(v>>8&255))+sq((c&255)-(v&255));if(d3<bd){bd=d3;best=q;}}b=(byte)best;near.put(v,b);}data[k]=b;}
     ImageWriteParam p=w.getDefaultWriteParam();IIOMetadata m=w.getDefaultImageMetadata(ImageTypeSpecifier.createFromRenderedImage(canvas),p);String fmt=m.getNativeMetadataFormatName();IIOMetadataNode root=(IIOMetadataNode)m.getAsTree(fmt);
     IIOMetadataNode gce=(IIOMetadataNode)root.getElementsByTagName("GraphicControlExtension").item(0);gce.setAttribute("delayTime",String.valueOf(Math.max(2,delays.get(i)/10)));gce.setAttribute("disposalMethod","none");
     IIOMetadataNode apps=new IIOMetadataNode("ApplicationExtensions"),app=new IIOMetadataNode("ApplicationExtension");app.setAttribute("applicationID","NETSCAPE");app.setAttribute("authenticationCode","2.0");app.setUserObject(new byte[]{1,0,0});apps.appendChild(app);root.appendChild(apps);m.setFromTree(fmt,root);
-    w.writeToSequence(new IIOImage(canvas,null,m),p);}w.endWriteSequence();}
+    w.writeToSequence(new IIOImage(canvas,null,m),p);
+    if(i==0||i==frames.size()/3||i==frames.size()*2/3||i==frames.size()-1)ImageIO.write(canvas,"png",new File(a[1],"frame"+i+".png"));}w.endWriteSequence();}
   System.out.println("frames="+frames.size()+" items="+l.patterns.feedback.size()+" patterns="+l.patterns.llm.saved.size());Runtime.getRuntime().halt(0);
  }
 }

@@ -1,59 +1,79 @@
-# RHI: Recursive Human Intelligence
+<div align="center">
+
+# RHI
+
+### Recursive Human Intelligence
 
 **AI improves itself recursively. Why shouldn't you?**
 
-RHI reads your chats with Claude Code, Codex, and Pi, then hands you honest feedback, sources, and sharper habits, so the same questions stop coming back.
+RHI reads your Claude Code, Codex, and Pi chats, then tells you what you keep getting stuck on and what would fix it for good.
 
-![RHI finding patterns and writing feedback](docs/demo.gif)
+![RHI turning chats into patterns and feedback](docs/demo.gif)
 
-*Demo with a fictional user and made-up chats.*
+<sub>Demo with a fictional user, made-up chats, and scripted output.</sub>
+
+</div>
 
 ## Install
 
-No Java needed. Each build includes its own runtime.
-
-**macOS and Linux**
+No Java needed. You bring your own OpenAI, Claude, or OpenRouter key.
 
 ```sh
+# macOS and Linux
 curl -fsSL https://raw.githubusercontent.com/andrearitossa/recursive-human-intelligence/main/install.sh | sh
 ```
 
-**Windows (PowerShell)**
-
 ```powershell
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/andrearitossa/recursive-human-intelligence/main/install.ps1 | iex
 ```
 
-Builds are not code signed yet, so your system may warn you the first time. You can read both install scripts first; they install only for your user.
+Builds aren't code signed yet, so your system may warn you. The scripts are short, and they install only for your user: read [install.sh](install.sh) or [install.ps1](install.ps1) first.
 
-You need your own OpenAI, Claude, or OpenRouter API key.
+## What it tells you
 
-| Your patterns | Your feedback |
-|---|---|
-| ![Pattern map](docs/patterns.png) | ![Feedback list](docs/feedback.png) |
+Not a usage dashboard. Feedback a blunt friend would give after reading every request you ever typed:
 
-![Feedback detail with a sharper version of a request](docs/detail.png)
+- **Your habits, with receipts.** "You've typed this phrase in 23 chats. Save it once, with real limits." It shows what you wrote and a sharper version.
+- **What to actually learn.** Keep asking about the same subject? It names a real book or course, instead of answering again.
+- **What you keep reopening.** Decisions you never settle, and questions you're asking an AI that only customers can answer.
+
+Every item quotes your own messages, so you can check it.
+
+## How it works
+
+1. **Click Get feedback.** That's the whole interface.
+2. **Watch patterns form.** Your requests are read and grouped into recurring behaviors, live.
+3. **Act on what arrives.** Open an item, do the one thing it asks, and mark it done. New chats unlock new feedback.
+
+<img src="docs/patterns.png" width="49%" alt="Pattern map"> <img src="docs/feedback.png" width="49%" alt="Feedback list">
 
 ## What leaves your computer
 
-- Transcripts are read locally and never changed. Imported history stays in `.loop` in your home folder.
-- **Get feedback** sends your request text, cut to 1,000 characters each, to the provider you choose, using your key. It asks first and states the amount.
-- Obvious credentials are removed before sending, but names and other personal details in your messages can remain. To limit this, remove chats on **Chats** or skip project folders in **Settings**.
-- Import also looks in other Windows and WSL user profiles on your computer that you can access. Turn this off in **Settings** under **Sources**.
-- Your API key is encrypted by Windows, your macOS Keychain, or your Linux keyring (`secret-tool`). If none is available, it stays in memory for that session.
+| | |
+|---|---|
+| **Stays local** | Your transcripts, which are never changed, and everything RHI stores in `~/.loop` |
+| **Sent, after you confirm** | Your requests, cut to 1,000 characters each, to the provider you chose, with your key |
+| **Removed first** | Obvious credentials. Names and other personal details in your messages can remain, so remove sensitive chats or skip project folders first |
+| **Your API key** | Encrypted by Windows, macOS Keychain, or the Linux keyring. Without one, it stays in memory for that session |
 
-## Use it
+RHI also looks in other Windows and WSL profiles on your computer that you can access. You can turn this off in **Settings → Sources**.
+
+<details>
+<summary><b>Details: providers, patterns, files, building from source</b></summary>
+
+### Use it
 
 Click **Get feedback** on Home. One click is a complete read: the agent keeps looking, up to four passes, until nothing strong is left. The button then becomes **Check for new chats**, which calls the model only if your chats changed. That one button does everything in order: asks for your AI connection if it is missing, checks for new chats, reads and groups what is new, and writes your feedback. Items appear as they arrive, and you can open them while it is still working.
 
 **Patterns** and **Chats** are there to explore and to narrow things down; you never need them. The **>** at the bottom opens logs of each step: API calls with sizes, timing, and tokens, what each batch produced, each pattern and item as it lands, and anything dropped and why. Logs show model-written names, never keys or your messages.
 
-## Patterns
+### Patterns
 
 1. **Patterns** starts as a quick local keyword map, with nothing sent. **Analyze with AI** reads your requests in batches of up to 250, keeping similar ones together, using the model from Settings, after stating how much will be sent. The map grows by area as batches return, then settles into named patterns grouped from the short descriptions alone. Results are saved, so later runs read only new requests. Chats are always counted locally. **Focus on** is optional and steers grouping and findings. Click bubbles to choose what to analyze, or click a color to filter.
 2. **Get feedback**, on Home or Patterns, opens Home and sends the one-line description of every request, plus excerpts from your patterns, to your model. It returns a short list of named items. Click one for the detail, what to do, and a search for any source it names. Items must quote at least two real messages. Phrases you retype across chats are measured locally and shown to the agent. **Mark as done** moves an item to a hidden list below, where **Undo** brings it back, and it will not be suggested again. **Remove**, on done items and in the detail view, forgets an item so it can come back.
 
-## Connect a model
+### Connect a model
 
 Settings supports three providers through one model interface:
 
@@ -67,7 +87,7 @@ Enter a model ID available to your account. Paste a key or set the environment v
 
 Analysis samples at most 80 user excerpts / 45,000 text characters per call. Obvious credentials are redacted and session names replaced with anonymous codes before sending. Evidence must reference actual sampled requests from three distinct sessions. The app rejects invalid output and unsupported operations. Archived topics and similar titles are suppressed. Feedback and generated content are stored separately and are never imported as evidence.
 
-## Files and generated tools
+### Files and generated tools
 
 History and state live in `~/.loop/`: `history.tsv`, `scan-index.tsv`, `settings.properties`, `solutions.json`, and generated HTML artifacts. Unchanged files are not reparsed. Transcripts are streamed, up to 512 MB each. Only what the user typed is kept: injected context, slash commands, tool results, meta turns, and subagent sessions are dropped. No directory symlinks are followed. Windows discovers WSL homes; WSL checks Windows profiles. Environment location overrides are supported; `LOOP_WINDOWS_HOME` adds an explicit profile.
 
@@ -75,7 +95,7 @@ Generated HTML opens in your browser. It uses a sandboxed iframe, restrictive co
 
 Exclude a project by its real folder, for example `/home/you/client-work`. Exclusions affect future imports. Previously imported history is retained until deletion and may still be used in analysis. Delete history removes imported requests and solution data, leaving original chat transcripts untouched. Cloud sync, signed installers, arbitrary scripts, and an MCP server are not included.
 
-## Find saved solutions from an agent harness
+### Find saved solutions from an agent harness
 
 After compiling, any harness with access to Java can look up active solutions:
 
@@ -85,7 +105,7 @@ java -cp desktop/build Loop --search "docker"
 
 The command returns JSON with title, description, version, and a standalone artifact path. Archived tools are excluded; it performs no model calls and does not launch the desktop window.
 
-## Validation
+### Validation
 
 ```sh
 ./desktop/check.sh
@@ -95,9 +115,11 @@ The Windows launcher runs the same checks: transcript formats, harness-text filt
 
 `desktop/ui-test/run.sh Drive` runs RHI's real window end to end from WSL with the Windows JDK: real controls, a throwaway home, and a fake local provider. It opens the window off-screen and draws only RHI's own components to images.
 
-## Build from source
+### Build from source
 
 Requires JDK 17+. `desktop/start.bat` or `desktop/start.sh` compiles, runs checks, and opens the app. `desktop/package.sh NAME` builds a self-contained package. Pushing a `v*` tag builds and publishes releases for every platform.
+
+</details>
 
 ## License
 

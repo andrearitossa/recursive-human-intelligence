@@ -122,6 +122,8 @@ final class Workspace extends JPanel {
         for(int i=0;i<shown.size();i++)cards.put(card(shown.get(i),feature&&i==0&&isNew(shown.get(i))),i==0?8:12);
         boolean findings=feature&&host.patterns!=null&&host.patterns.hasFeedback();
         if(shown.isEmpty()&&!findings&&!thinking&&!flowing)cards.put(emptyState(query));
+        // The empty state has its own button; two identical ones would compete.
+        analyze.setVisible(!(shown.isEmpty()&&!findings&&!thinking&&!flowing&&query.isEmpty()&&!archived.isSelected()));
         cards.end();cards.revalidate();cards.repaint();
     }
     private boolean findingsVisible(){return host.patterns!=null&&host.patterns.hasFeedback();}
