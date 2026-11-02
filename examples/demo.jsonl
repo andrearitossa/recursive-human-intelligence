@@ -1,0 +1,3 @@
+{"sessionId":"monday","role":"user","content":"Can you clean the whitespace and empty rows from my CSV report?"}
+{"sessionId":"wednesday","role":"user","content":"Please clean this spreadsheet CSV again."}
+{"sessionId":"friday","role":"user","content":"Remove empty rows and trim the cells in this CSV."}

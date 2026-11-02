@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+
+.run/
+
+desktop/build/
+ui-test/shots/
+ui-test/*.log
