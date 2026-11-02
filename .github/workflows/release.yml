@@ -11,7 +11,7 @@ jobs:
         include:
           - {os: windows-latest, name: RHI-windows-x64}
           - {os: macos-latest, name: RHI-macos-arm64}
-          - {os: macos-13, name: RHI-macos-x64}
+          - {os: macos-15-intel, name: RHI-macos-x64}
           - {os: ubuntu-latest, name: RHI-linux-x64}
     runs-on: ${{ matrix.os }}
     steps:
