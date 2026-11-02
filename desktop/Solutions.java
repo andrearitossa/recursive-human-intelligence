@@ -83,7 +83,7 @@ final class Solutions {
         boolean unseen=engine.requests.keySet().stream().anyMatch(id->!analyzed.contains(id));
         if(!unseen)return null;
         List<Map<String,Object>> sample=sample(engine);if(sample.isEmpty())return null;
-        if(model==null)return curated(engine,manual);
+        if(model==null)return curated(engine);
         String input=Json.write(Map.of("requests",sample,"existing",tools.stream().map(t->Map.of("topic",t.topic,"title",t.title,"archived",t.archived)).toList()));
         String response=model.complete(INSTRUCTIONS,input);if(Thread.currentThread().isInterrupted())throw new InterruptedException("Stopped");
         Map<?,?> result=Json.map(parseModel(response));
@@ -134,7 +134,7 @@ final class Solutions {
     private static boolean matches(String text,String regex){return text.length()<=600&&java.util.regex.Pattern.compile(regex,java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text).find();}
     static boolean asksCsvCleanup(String text){return matches(text,"\\b(csv|spreadsheet|excel)\\b")&&matches(text,"\\b(clean|cleanup|tidy|trim|whitespace|blank|empty|dedup\\w*|duplicates?|normali[sz]e|fix)\\b");}
     static boolean asksDockerHelp(String text){return matches(text,"\\bdocker\\b")&&matches(text,"\\b(how|why|what|command|help|logs?|error|fail\\w*|exec|remind|stuck|explain)\\b");}
-    Tool curated(ChatEngine engine,boolean manual)throws Exception{
+    Tool curated(ChatEngine engine)throws Exception{
         for(String topic:List.of("csv-cleanup","docker-reference")){
             if(hasTopic(topic))continue;boolean csv=topic.startsWith("csv");java.util.function.Predicate<ChatEngine.Request> asks=csv?r->asksCsvCleanup(r.text()):r->asksDockerHelp(r.text());
             List<String> ids=engine.requests.entrySet().stream().filter(e->asks.test(e.getValue())).limit(200).map(Map.Entry::getKey).toList();
@@ -154,5 +154,4 @@ final class Solutions {
     void feedback(Tool tool,String type,String text)throws IOException{tool.feedback.add(Map.of("date",System.currentTimeMillis(),"type",type,"text",text));try{save();}catch(IOException error){tool.feedback.remove(tool.feedback.size()-1);throw error;}}
     void restore(Tool tool,int index)throws IOException{Map<String,Object> v=new LinkedHashMap<>(tool.versions.get(index));v.put("date",System.currentTimeMillis());v.put("change","Restored version "+(index+1));tool.versions.add(v);try{save();}catch(IOException error){tool.versions.remove(tool.versions.size()-1);throw error;}}
     void clear()throws IOException{if(Files.exists(directory)){try(var files=Files.list(directory)){for(Path file:files.filter(p->p.getFileName().toString().matches("[0-9a-fA-F-]{36}\\.html")).toList())Files.deleteIfExists(file);}}Files.deleteIfExists(directory.resolve("solutions.json"));tools.clear();analyzed.clear();lastSuggestion=0;}
-    String searchIndex(){return tools.stream().filter(t->!t.archived).map(t->t.title+"\n"+t.description+"\n"+directory.resolve(t.id+".html")).reduce("",(a,b)->a+"\n"+b);}
 }

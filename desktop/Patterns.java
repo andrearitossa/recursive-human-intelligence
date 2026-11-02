@@ -13,7 +13,6 @@ final class Patterns {
         final List<Item> examples=new ArrayList<>();
         void add(Item i){items.add(i);sessions.add(i.request().session());modes.merge(i.mode(),1,Integer::sum);}
         Mode dominant(){if(friction||FRICTION_LABEL.equals(label))return Mode.CORRECT;return modes.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(Mode.BUILD);}
-        int corrections(){return modes.getOrDefault(Mode.CORRECT,0);}
     }
     record Result(List<Group> groups,Map<Mode,Integer> modes,int requests,int sessions,int unclustered) {}
 

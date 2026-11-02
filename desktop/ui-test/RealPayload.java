@@ -1,2 +1,0 @@
-import java.nio.file.*;import java.util.*;
-public class RealPayload{public static void main(String[] a)throws Exception{ChatEngine e=new ChatEngine();e.load(Path.of(a[0]));var r=Patterns.analyze(e.requests);Map<String,Patterns.Item> refs=new HashMap<>();String in=Insights.input(r.groups(),refs);Files.writeString(Path.of(a[1]),in);System.out.println("groups="+r.groups().size()+" refs="+refs.size()+" chars="+in.length()+" unclustered="+r.unclustered()+"/"+r.requests());System.out.println(r.modes());}}

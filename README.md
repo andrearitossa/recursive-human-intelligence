@@ -93,7 +93,7 @@ The command returns JSON with title, description, version, and a standalone arti
 
 The Windows launcher runs the same checks: transcript formats, harness-text filtering, project exclusions, deduplication, cancellation, persistence, provider formats, evidence validation, cooldowns, feedback, revision and restore, CSV delimiters and encodings, redaction, and artifact escaping.
 
-`desktop/ui-test/run.sh Drive` runs RHI's real window end to end from WSL with the Windows JDK: real controls, a throwaway home, and a fake local provider. It opens the window off-screen and draws only RHI's own components to images. `RealImport` reports counts from real transcripts without printing their text.
+`desktop/ui-test/run.sh Drive` runs RHI's real window end to end from WSL with the Windows JDK: real controls, a throwaway home, and a fake local provider. It opens the window off-screen and draws only RHI's own components to images.
 
 ## Build from source
 
@@ -101,4 +101,4 @@ Requires JDK 17+. `desktop/start.bat` or `desktop/start.sh` compiles, runs check
 
 ## License
 
-Free to use, change, and sell, as long as you clearly credit **Andrea Ritossa**. See [LICENSE](LICENSE).
+[Apache License 2.0](LICENSE). Free to use, change, and sell. Copies and derived works must carry the credit to **Andrea Ritossa** in [NOTICE](NOTICE). If this project inspires your own work, please credit it too.

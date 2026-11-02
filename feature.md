@@ -2,7 +2,7 @@
 
 ## Current implementation
 
-RHI is a Java desktop app using the JDK standard library (Swing). It runs on Windows or Linux/WSL with JDK 17+. This replaces the earlier Electron and browser-only approaches, which could not provide dependable automatic filesystem access in Brave. The earlier HTML prototype remains in `app/`.
+RHI is a Java desktop app using the JDK standard library (Swing). It runs on Windows or Linux/WSL with JDK 17+. This replaces the earlier Electron and browser-only approaches, which could not provide dependable automatic filesystem access in Brave.
 
 The model interface supports **OpenAI, Claude, and OpenRouter**. Provider, endpoint, model ID, and credentials are configurable. The product logic does not depend on one model vendor. Keys are kept in memory or loaded from provider environment variables; chat excerpts are sent only when the model connection consent is enabled.
 
