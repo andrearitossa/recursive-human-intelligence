@@ -4,11 +4,20 @@ import java.awt.*;
 
 /** Shared look and layout helpers, so every screen aligns the same way. */
 public final class Ui {
-    static final Color BG=new Color(247,247,242),GREEN=new Color(50,74,45),MUTED=new Color(96,106,88),LINE=new Color(218,225,209),INK=new Color(41,60,38),SOFT=new Color(235,240,228);
-    static final String SANS=installed("Segoe UI")?"Segoe UI":Font.SANS_SERIF;
-    static boolean installed(String name){return java.util.Arrays.asList(GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()).contains(name);}
-    static Font sans(int style,int size){return new Font(SANS,style,size);}
-    static Font serif(int size){return new Font(installed("Georgia")?"Georgia":Font.SERIF,Font.PLAIN,size);}
+    // The andrearitossa.com palette.
+    static final Color BG=new Color(0xFAF7F2),ACCENT=new Color(0x6B1338),ACCENT_HOVER=new Color(0x85234B),INK=new Color(0x1C161A),BODY=new Color(0x4A4048),MUTED=new Color(0x756A71),LINE=new Color(0xE1DEDA),SOFT=new Color(0xF3EAE8);
+    /** EB Garamond ships with the app, so it looks the same on every computer. */
+    private static final Font BASE=loadFont();
+    private static Font loadFont(){
+        try(java.io.InputStream in=Ui.class.getResourceAsStream("/fonts/EBGaramond.ttf")){
+            java.io.InputStream use=in!=null?in:new java.io.FileInputStream("fonts/EBGaramond.ttf");
+            Font f=Font.createFont(Font.TRUETYPE_FONT,use);GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(f);return f;
+        }catch(Exception e){return new Font(Font.SERIF,Font.PLAIN,12);}
+    }
+    // Garamond runs small, so text sizes are stepped up to stay as readable as before.
+    static Font sans(int style,int size){return BASE.deriveFont(style,size+2f);}
+    static Font serif(int size){return BASE.deriveFont(Font.PLAIN,(float)size+2);}
+    static Font heading(int size){return BASE.deriveFont(Font.BOLD,(float)size).deriveFont(java.util.Map.of(java.awt.font.TextAttribute.TRACKING,-0.01f));}
     static void install(){
         System.setProperty("swing.boldMetal","false");
         Font base=sans(Font.PLAIN,14);
@@ -23,7 +32,7 @@ public final class Ui {
         b.setBorder(new CompoundBorder(new LineBorder(LINE,1,true),new EmptyBorder(8,14,8,14)));
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));hover(b,Color.WHITE,SOFT);return b;
     }
-    static JButton primary(String text){JButton b=button(text);b.setBackground(GREEN);b.setForeground(Color.WHITE);b.setBorder(new CompoundBorder(new LineBorder(GREEN,1,true),new EmptyBorder(8,14,8,14)));hover(b,GREEN,new Color(66,96,60));return b;}
+    static JButton primary(String text){JButton b=button(text);b.setBackground(ACCENT);b.setForeground(Color.WHITE);b.setBorder(new CompoundBorder(new LineBorder(ACCENT,1,true),new EmptyBorder(8,14,8,14)));hover(b,ACCENT,ACCENT_HOVER);return b;}
     static void hover(JButton b,Color normal,Color over){
         for(var old:b.getMouseListeners())if(old instanceof Hover)b.removeMouseListener(old);
         b.addMouseListener(new Hover(b,normal,over));
@@ -35,8 +44,12 @@ public final class Ui {
     }
     /** A flat text field whose border wakes up on focus. */
     static <T extends javax.swing.text.JTextComponent> T field(T f){
-        Border rest=new CompoundBorder(new LineBorder(LINE),new EmptyBorder(6,8,6,8)),on=new CompoundBorder(new LineBorder(GREEN),new EmptyBorder(6,8,6,8));
+        Border rest=new CompoundBorder(new LineBorder(LINE),new EmptyBorder(6,8,6,8)),on=new CompoundBorder(new LineBorder(ACCENT),new EmptyBorder(6,8,6,8));
         f.setBorder(rest);f.addFocusListener(new java.awt.event.FocusAdapter(){@Override public void focusGained(java.awt.event.FocusEvent e){f.setBorder(on);}@Override public void focusLost(java.awt.event.FocusEvent e){f.setBorder(rest);}});return f;
+    }
+    /** Fixes a text button's width to its widest state, so a label is never cut off. */
+    static void fit(AbstractButton b,Font widest,String longest){
+        var m=b.getFontMetrics(widest);java.awt.Insets in=b.getInsets();b.setPreferredSize(new Dimension(m.stringWidth(longest)+in.left+in.right+8,m.getHeight()+in.top+in.bottom));
     }
     /** Every detail window closes with Esc. */
     static void closeOnEscape(JDialog d){d.getRootPane().registerKeyboardAction(e->d.dispose(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);}
@@ -47,19 +60,19 @@ public final class Ui {
         @Override protected JButton createDecreaseButton(int o){return none();}
         @Override protected JButton createIncreaseButton(int o){return none();}
         @Override protected void paintTrack(Graphics g,JComponent c,Rectangle r){g.setColor(BG);g.fillRect(r.x,r.y,r.width,r.height);}
-        @Override protected void paintThumb(Graphics g,JComponent c,Rectangle r){if(r.isEmpty())return;Graphics2D d=(Graphics2D)g.create();d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);d.setColor(isDragging||isThumbRollover()?MUTED:new Color(200,207,192));d.fillRoundRect(r.x+2,r.y+2,r.width-4,r.height-4,6,6);d.dispose();}
+        @Override protected void paintThumb(Graphics g,JComponent c,Rectangle r){if(r.isEmpty())return;Graphics2D d=(Graphics2D)g.create();d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);d.setColor(isDragging||isThumbRollover()?MUTED:new Color(0xD6D1CD));d.fillRoundRect(r.x+2,r.y+2,r.width-4,r.height-4,6,6);d.dispose();}
     }
     private static final class Tick implements Icon {
         public int getIconWidth(){return 18;}public int getIconHeight(){return 18;}
         public void paintIcon(Component c,Graphics g,int x,int y){
             boolean on=((AbstractButton)c).isSelected();Graphics2D d=(Graphics2D)g.create();d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-            d.setColor(on?GREEN:Color.WHITE);d.fillRoundRect(x+1,y+1,15,15,5,5);d.setColor(on?GREEN:new Color(180,188,172));d.drawRoundRect(x+1,y+1,15,15,5,5);
+            d.setColor(on?ACCENT:Color.WHITE);d.fillRoundRect(x+1,y+1,15,15,5,5);d.setColor(on?ACCENT:new Color(0xB9B2B0));d.drawRoundRect(x+1,y+1,15,15,5,5);
             if(on){d.setColor(Color.WHITE);d.setStroke(new BasicStroke(2,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));d.drawPolyline(new int[]{x+5,x+8,x+13},new int[]{y+9,y+12,y+6},3);}d.dispose();
         }
     }
     static JLabel label(String text,Font font,Color color){JLabel l=new JLabel(text);l.putClientProperty("html.disable",Boolean.TRUE);l.setFont(font);l.setForeground(color);return l;}
-    static JLabel heading(String text){return label(text,serif(30),INK);}
-    static JLabel section(String text){return label(text,sans(Font.BOLD,15),GREEN);}
+    static JLabel heading(String text){return label(text,heading(32),INK);}
+    static JLabel section(String text){JLabel l=label(text.toUpperCase(java.util.Locale.ROOT),sans(Font.BOLD,11).deriveFont(java.util.Map.of(java.awt.font.TextAttribute.TRACKING,0.16f)),ACCENT);return l;}
     static JLabel muted(String text){return label(text,sans(Font.PLAIN,13),MUTED);}
     /** Read-only text that wraps to its container and never interprets markup. */
     static JTextArea prose(String text,Color color){
@@ -67,7 +80,7 @@ public final class Ui {
     }
     static JPanel row(Component... items){JPanel p=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));p.setOpaque(false);for(int i=0;i<items.length;i++){if(i>0)p.add(Box.createHorizontalStrut(8));p.add(items[i]);}return p;}
     static JScrollPane scroll(Component view){JScrollPane s=new JScrollPane(view);s.setBorder(null);s.getViewport().setBackground(BG);s.getVerticalScrollBar().setUnitIncrement(18);s.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);return s;}
-    static Stack card(boolean highlighted){Stack p=new Stack();p.setOpaque(true);p.setBackground(Color.WHITE);p.setBorder(new CompoundBorder(new LineBorder(highlighted?GREEN:LINE,highlighted?2:1,true),new EmptyBorder(18,22,18,22)));return p;}
+    static Stack card(boolean highlighted){Stack p=new Stack();p.setOpaque(true);p.setBackground(Color.WHITE);p.setBorder(new CompoundBorder(new LineBorder(highlighted?ACCENT:LINE,highlighted?2:1,true),new EmptyBorder(18,22,18,22)));return p;}
 
     /** A left-aligned vertical stack whose rows fill the width; tracks a scroll pane's width so text wraps. */
     static class Stack extends JPanel implements Scrollable {

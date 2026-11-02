@@ -117,7 +117,7 @@ final class Workspace extends JPanel {
         for(Solutions.Tool t:store.tools)if(t.archived==archived.isSelected()&&(t.title+" "+t.description+" "+t.topic).toLowerCase(Locale.ROOT).contains(query))shown.add(t);
         Collections.reverse(shown); // Newest first.
         boolean feature=query.isEmpty()&&!archived.isSelected();
-        if((thinking||flowing)&&feature&&!findingsVisible()){JProgressBar bar=new JProgressBar();bar.setIndeterminate(true);bar.setBorderPainted(false);bar.setForeground(Ui.GREEN);bar.setBackground(Ui.LINE);bar.setPreferredSize(new Dimension(100,4));cards.put(Ui.label("Reading everything you asked…",Ui.serif(20),Ui.INK),30);cards.put(Ui.muted("Your feedback appears here as it is written."),4);cards.put(bar,12);cards.put(Box.createVerticalStrut(24));}
+        if((thinking||flowing)&&feature&&!findingsVisible()){JProgressBar bar=new JProgressBar();bar.setIndeterminate(true);bar.setBorderPainted(false);bar.setForeground(Ui.ACCENT);bar.setBackground(Ui.LINE);bar.setPreferredSize(new Dimension(100,4));cards.put(Ui.label("Reading everything you asked…",Ui.serif(20),Ui.INK),30);cards.put(Ui.muted("Your feedback appears here as it is written."),4);cards.put(bar,12);cards.put(Box.createVerticalStrut(24));}
         if(feature&&host.patterns!=null&&host.patterns.hasFeedback()){cards.put(Ui.section("Feedback"));cards.put(host.patterns.results,8);if(!shown.isEmpty())cards.put(Ui.section("Saved"),26);}
         for(int i=0;i<shown.size();i++)cards.put(card(shown.get(i),feature&&i==0&&isNew(shown.get(i))),i==0?8:12);
         boolean findings=feature&&host.patterns!=null&&host.patterns.hasFeedback();
@@ -346,7 +346,7 @@ final class Workspace extends JPanel {
         catch(Exception e){host.status.setText(message(e));}
     }
     private static JCheckBox check(JCheckBox box){box.setOpaque(false);box.setBorder(new EmptyBorder(2,0,2,10));return box;}
-    private static void field(Ui.Stack form,String label,JComponent input){JLabel l=new JLabel(label);l.setBorder(new EmptyBorder(12,0,5,0));form.put(l);if(input instanceof javax.swing.text.JTextComponent t)Ui.field(t);else input.setBackground(Color.WHITE);form.put(input);}
+    private static void field(Ui.Stack form,String label,JComponent input){JLabel l=new JLabel(label);l.setBorder(new EmptyBorder(12,0,5,0));form.put(l);if(input instanceof javax.swing.text.JTextComponent t)Ui.field(t);if(input instanceof JComboBox)input.setBorder(new LineBorder(Ui.LINE));else input.setBackground(Color.WHITE);form.put(input);}
     void loadProvider(Models.Provider p){shownProvider=p;endpoint.setText(host.settings.getProperty("endpoint."+p.name(),p.endpoint));model.setText(host.settings.getProperty("model."+p.name(),""));key.setText(sessionKeys.getOrDefault(p,""));updateKeyHint();}
     private void updateKeyHint(){Models.Provider p=shownProvider;keyHint.setText(System.getenv(p.keyEnv)!=null?"Using "+p.keyEnv+" unless you paste a key.":"Encrypted by "+KeyStore.name()+" if kept. Never written to RHI's settings.");}
     void persistForm()throws IOException{

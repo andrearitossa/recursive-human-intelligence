@@ -35,7 +35,7 @@ public class Demo{
   BufferedImage base=paint(l.frame);BufferedImage s=new BufferedImage(W,H+BAR,1);Graphics2D g=s.createGraphics();g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BICUBIC);g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
   g.setColor(Ui.BG);g.fillRect(0,0,W,H);g.drawImage(base,0,0,W,H,null);
   if(source!=l.frame){BufferedImage d=paint(source);g.setColor(new Color(41,60,38,120));g.fillRect(0,0,W,H);int dw=Math.min(W-90,d.getWidth()),dh=d.getHeight()*dw/d.getWidth();dh=Math.min(dh,H-30);int x=(W-dw)/2,y=(H-dh)/2;g.setColor(Ui.BG);g.fillRoundRect(x-1,y-1,dw+2,dh+2,6,6);g.drawImage(d,x,y,dw,dh,null);}
-  g.setColor(Ui.GREEN);g.fillRect(0,H,W,BAR);g.setColor(Color.WHITE);g.setFont(Ui.sans(Font.BOLD,17));g.drawString(caption,(W-g.getFontMetrics().stringWidth(caption))/2,H+30);g.dispose();
+  g.setColor(Ui.ACCENT);g.fillRect(0,H,W,BAR);g.setColor(Color.WHITE);g.setFont(Ui.sans(Font.BOLD,17));g.drawString(caption,(W-g.getFontMetrics().stringWidth(caption))/2,H+30);g.dispose();
   if(!frames.isEmpty()&&same(frames.get(frames.size()-1),s)){delays.set(delays.size()-1,delays.get(delays.size()-1)+ms);return;}frames.add(s);delays.add(ms);}
  static void hold(int ms)throws Exception{long end=System.currentTimeMillis()+ms;while(System.currentTimeMillis()<end){snap(160);Thread.sleep(140);}}
  static void png(String n,Window w,File d)throws Exception{ImageIO.write(paint(w),"png",new File(d,n+".png"));}

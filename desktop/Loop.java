@@ -74,11 +74,11 @@ public final class Loop {
     }
     private JComponent header(){
         JPanel top=new JPanel(new BorderLayout());top.setOpaque(false);
-        top.add(Ui.label("RHI",Ui.sans(Font.BOLD,30),Ui.GREEN),BorderLayout.WEST);
+        top.add(Ui.label("RHI",Ui.heading(32),Ui.ACCENT),BorderLayout.WEST);
         JPanel links=new JPanel(new FlowLayout(FlowLayout.RIGHT,6,4));links.setOpaque(false);ButtonGroup group=new ButtonGroup();
         for(String name:List.of("Home","Patterns","Chats","Settings")){
             JToggleButton link=new JToggleButton(name);link.setFocusPainted(false);link.setContentAreaFilled(false);link.setOpaque(true);link.setBackground(Ui.BG);link.setForeground(Ui.INK);link.setBorder(new EmptyBorder(7,14,7,14));link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            link.addActionListener(e->select(name));group.add(link);links.add(link);nav.put(name,link);
+            Ui.fit(link,Ui.sans(Font.BOLD,14),name);link.addActionListener(e->select(name));group.add(link);links.add(link);nav.put(name,link);
         }
         top.add(links,BorderLayout.EAST);return top;
     }
@@ -139,18 +139,18 @@ public final class Loop {
     }
     private boolean saveChats(){try{engine.save(data);engine.saveRemoved(removedFile);return true;}catch(IOException e){error(e);return false;}}
     private JComponent footer(){
-        progress.setPreferredSize(new Dimension(160,6));progress.setBorderPainted(false);progress.setForeground(Ui.GREEN);progress.setBackground(Ui.LINE);progress.setVisible(false);
+        progress.setPreferredSize(new Dimension(160,6));progress.setBorderPainted(false);progress.setForeground(Ui.ACCENT);progress.setBackground(Ui.LINE);progress.setVisible(false);
         cancel.addActionListener(e->{stopped.set(true);status.setText("Stopping after the current file…");cancel.setEnabled(false);if(workspace.job!=null)workspace.interrupt();});
         JPanel right=new JPanel(new FlowLayout(FlowLayout.RIGHT,10,0));right.setOpaque(false);right.add(progress);right.add(cancel);
         JPanel foot=new JPanel(new BorderLayout(12,0));foot.setOpaque(false);foot.setBorder(new CompoundBorder(new MatteBorder(1,0,0,0,Ui.LINE),new EmptyBorder(10,0,0,0)));foot.setPreferredSize(new Dimension(100,48));
         status.setMinimumSize(new Dimension(0,0));logsToggle.setFocusPainted(false);logsToggle.setContentAreaFilled(false);logsToggle.setBorder(new EmptyBorder(4,0,4,12));logsToggle.setForeground(Ui.MUTED);logsToggle.setFont(Ui.sans(Font.PLAIN,13));logsToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        foot.add(logsToggle,BorderLayout.WEST);foot.add(status,BorderLayout.CENTER);foot.add(right,BorderLayout.EAST);return foot;
+        Ui.fit(logsToggle,Ui.sans(Font.PLAIN,13),">  Logs");foot.add(logsToggle,BorderLayout.WEST);foot.add(status,BorderLayout.CENTER);foot.add(right,BorderLayout.EAST);return foot;
     }
     final JToggleButton logsToggle=new JToggleButton(">  Logs");
     final JTextArea logs=new JTextArea();
     private JScrollPane logsScroll;
     private JComponent logsPanel(){
-        logs.setEditable(false);logs.setFont(new Font(Font.MONOSPACED,Font.PLAIN,12));logs.setForeground(new Color(214,222,206));logs.setBackground(new Color(31,41,29));logs.setMargin(new Insets(8,10,8,10));logs.setCaretColor(logs.getBackground());
+        logs.setEditable(false);logs.setFont(new Font(Font.MONOSPACED,Font.PLAIN,12));logs.setForeground(new Color(0xCBC2CA));logs.setBackground(new Color(0x15121A));logs.setMargin(new Insets(8,10,8,10));logs.setCaretColor(logs.getBackground());
         logsScroll=new JScrollPane(logs);logsScroll.setBorder(null);logsScroll.setPreferredSize(new Dimension(100,170));logsScroll.setVisible(Boolean.parseBoolean(settings.getProperty("logs","false")));
         logsToggle.setSelected(logsScroll.isVisible());logsToggle.setText(logsScroll.isVisible()?"v  Logs":">  Logs");
         logsToggle.addActionListener(e->{
@@ -256,7 +256,7 @@ public final class Loop {
         if(!SystemTray.isSupported())return;
         try{
             var image=new java.awt.image.BufferedImage(32,32,java.awt.image.BufferedImage.TYPE_INT_ARGB);Graphics2D g=image.createGraphics();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(Ui.GREEN);g.fillOval(1,1,30,30);g.setColor(Color.WHITE);g.setStroke(new BasicStroke(3));g.drawOval(8,8,16,16);g.dispose();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(Ui.ACCENT);g.fillOval(1,1,30,30);g.setColor(Color.WHITE);g.setStroke(new BasicStroke(3));g.drawOval(8,8,16,16);g.dispose();
             PopupMenu menu=new PopupMenu();MenuItem open=new MenuItem("Open RHI"),quit=new MenuItem("Quit");trayPause=new MenuItem(workspace.paused()?"Resume":"Pause");menu.add(open);menu.add(trayPause);menu.addSeparator();menu.add(quit);
             open.addActionListener(e->SwingUtilities.invokeLater(this::reveal));trayPause.addActionListener(e->SwingUtilities.invokeLater(workspace::togglePause));quit.addActionListener(e->SwingUtilities.invokeLater(this::quit));
             tray=new TrayIcon(image,"RHI",menu);tray.setImageAutoSize(true);tray.addActionListener(e->SwingUtilities.invokeLater(this::reveal));SystemTray.getSystemTray().add(tray);

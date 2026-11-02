@@ -8,7 +8,7 @@ import java.util.List;
 
 /** The two-step view: 1 see your patterns, 2 what they mean and what to do. */
 final class PatternsPage extends JPanel {
-    static final Map<Patterns.Mode,Color> COLORS=new EnumMap<>(Map.of(Patterns.Mode.BUILD,new Color(74,124,89),Patterns.Mode.FIX,new Color(193,84,62),Patterns.Mode.UNDERSTAND,new Color(70,120,170),Patterns.Mode.CHECK,new Color(196,150,50),Patterns.Mode.PLAN,new Color(125,92,160),Patterns.Mode.RESEARCH,new Color(52,145,145),Patterns.Mode.CORRECT,new Color(190,70,110),Patterns.Mode.STEER,new Color(140,145,135)));
+    static final Map<Patterns.Mode,Color> COLORS=new EnumMap<>(Map.of(Patterns.Mode.BUILD,new Color(0x6B1338),Patterns.Mode.FIX,new Color(0xB5533C),Patterns.Mode.UNDERSTAND,new Color(0x3F5C73),Patterns.Mode.CHECK,new Color(0xA9843F),Patterns.Mode.PLAN,new Color(0x6B5B7B),Patterns.Mode.RESEARCH,new Color(0x4F7067),Patterns.Mode.CORRECT,new Color(0xA23B5A),Patterns.Mode.STEER,new Color(0x8C857D)));
     final Loop host;
     final JButton ask=Ui.primary("Get feedback"),analyze=Ui.button("Analyze with AI");
     final JTextField focus=new JTextField(20);
@@ -44,7 +44,7 @@ final class PatternsPage extends JPanel {
     private JComponent stepOnePage(){
         JPanel left=new JPanel(new BorderLayout(0,8));left.setOpaque(false);
         JPanel top=new JPanel(new BorderLayout(0,8));top.setOpaque(false);top.add(overview,BorderLayout.NORTH);top.add(bars,BorderLayout.CENTER);left.add(top,BorderLayout.NORTH);left.add(map,BorderLayout.CENTER);
-        reading.setPreferredSize(new Dimension(100,5));reading.setBorderPainted(false);reading.setForeground(Ui.GREEN);reading.setBackground(Ui.LINE);
+        reading.setPreferredSize(new Dimension(100,5));reading.setBorderPainted(false);reading.setForeground(Ui.ACCENT);reading.setBackground(Ui.LINE);
         JPanel live=new JPanel(new BorderLayout(0,5));live.setOpaque(false);live.add(reading,BorderLayout.NORTH);live.add(ticker,BorderLayout.SOUTH);live.setVisible(false);liveBar=live;left.add(live,BorderLayout.SOUTH);
         side=Ui.scroll(detail);side.setPreferredSize(new Dimension(340,100));detail.setBorder(new EmptyBorder(0,6,0,10));
         JPanel action=new JPanel(new BorderLayout(0,6));action.setOpaque(false);action.setBorder(new EmptyBorder(10,6,0,10));action.add(scope,BorderLayout.NORTH);action.add(ask,BorderLayout.SOUTH);
@@ -230,14 +230,14 @@ final class PatternsPage extends JPanel {
     /** A text link: present when wanted, without competing with the content. */
     private static JButton quiet(String text){
         JButton b=new JButton(text);b.setFocusPainted(false);b.setContentAreaFilled(false);b.setBorder(new EmptyBorder(6,8,6,8));b.setForeground(Ui.MUTED);b.setFont(Ui.sans(Font.PLAIN,13));b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.addMouseListener(new MouseAdapter(){@Override public void mouseEntered(MouseEvent e){b.setForeground(Ui.GREEN);}@Override public void mouseExited(MouseEvent e){b.setForeground(Ui.MUTED);}});return b;
+        b.addMouseListener(new MouseAdapter(){@Override public void mouseEntered(MouseEvent e){b.setForeground(Ui.ACCENT);}@Override public void mouseExited(MouseEvent e){b.setForeground(Ui.MUTED);}});return b;
     }
     private JComponent row(Insights.Finding f,boolean top,boolean done){
         Color rest=done?Ui.BG:Color.WHITE;
         JPanel row=new JPanel(new BorderLayout(12,0));row.setBackground(rest);row.setBorder(new CompoundBorder(new MatteBorder(0,0,1,0,Ui.LINE),new EmptyBorder(done?9:14,18,done?9:14,12)));row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         Ui.Stack text=new Ui.Stack();text.put(Ui.label(f.name(),done?Ui.sans(Font.PLAIN,14):Ui.serif(19),done?Ui.MUTED:Ui.INK));if(!done)text.put(Ui.label(f.description(),Ui.sans(Font.PLAIN,14),Ui.MUTED),2);row.add(text,BorderLayout.CENTER);
         JButton mark=quiet(done?"Undo":"Mark as done");mark.addActionListener(e->setDone(f,!done));JPanel east=new JPanel(new GridBagLayout());east.setOpaque(false);east.add(mark);if(done){JButton gone=quiet("Remove");gone.addActionListener(e->removeFeedback(f));east.add(gone);}row.add(east,BorderLayout.EAST);
-        MouseAdapter open=new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){detail(f);}@Override public void mouseEntered(MouseEvent e){if(!done)row.setBackground(new Color(251,252,249));}@Override public void mouseExited(MouseEvent e){row.setBackground(rest);}};row.addMouseListener(open);text.addMouseListener(open);
+        MouseAdapter open=new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){detail(f);}@Override public void mouseEntered(MouseEvent e){if(!done)row.setBackground(new Color(0xFDFBF8));}@Override public void mouseExited(MouseEvent e){row.setBackground(rest);}};row.addMouseListener(open);text.addMouseListener(open);
         return row;
     }
     void detail(Insights.Finding f){
@@ -246,9 +246,9 @@ final class PatternsPage extends JPanel {
         body.put(Ui.label(f.name(),Ui.serif(28),Ui.INK));
         JTextArea message=Ui.prose(f.message().isBlank()?f.description():f.message(),Ui.INK);message.setFont(Ui.sans(Font.PLAIN,16));body.put(message,12);
         if(!f.you().isBlank()){
-            Ui.Stack quote=new Ui.Stack();quote.setBorder(new CompoundBorder(new MatteBorder(0,3,0,0,Ui.GREEN),new EmptyBorder(2,12,2,0)));
+            Ui.Stack quote=new Ui.Stack();quote.setBorder(new CompoundBorder(new MatteBorder(0,3,0,0,Ui.ACCENT),new EmptyBorder(2,12,2,0)));
             quote.put(Ui.label("YOU WROTE",Ui.sans(Font.BOLD,11),Ui.MUTED));quote.put(Ui.prose("“"+f.you()+"”",Ui.MUTED),2);
-            quote.put(Ui.label("SHARPER",Ui.sans(Font.BOLD,11),Ui.GREEN),8);JTextArea sharp=Ui.prose(f.better(),Ui.INK);quote.put(sharp,2);body.put(quote,16);
+            quote.put(Ui.label("SHARPER",Ui.sans(Font.BOLD,11),Ui.ACCENT),8);JTextArea sharp=Ui.prose(f.better(),Ui.INK);quote.put(sharp,2);body.put(quote,16);
         }
         for(Insights.Action a:f.actions()){
             Ui.Stack box=new Ui.Stack();box.setOpaque(true);box.setBackground(Ui.SOFT);box.setBorder(new EmptyBorder(14,16,14,16));box.put(Ui.prose(a.text(),Ui.INK));
@@ -349,7 +349,7 @@ final class PatternsPage extends JPanel {
             Graphics2D g=(Graphics2D)graphics.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             for(Patterns.Group p:bubbles.keySet()){
                 double[] b=now(p);if(b[2]<1)continue;boolean on=selected.contains(p),off=!selected.isEmpty()&&!on;Color c=COLORS.get(p.dominant());
-                g.setColor(new Color(c.getRed(),c.getGreen(),c.getBlue(),off?70:p==hover||on?255:205));g.fill(new Ellipse2D.Double(b[0]-b[2],b[1]-b[2],b[2]*2,b[2]*2));
+                g.setColor(new Color(c.getRed(),c.getGreen(),c.getBlue(),off?70:p==hover||on?255:238));g.fill(new Ellipse2D.Double(b[0]-b[2],b[1]-b[2],b[2]*2,b[2]*2));
                 if(on){g.setColor(Ui.INK);g.setStroke(new BasicStroke(2.5f));g.draw(new Ellipse2D.Double(b[0]-b[2]-3,b[1]-b[2]-3,b[2]*2+6,b[2]*2+6));}
                 if(b[2]<24)continue;
                 // Whole words only: shrink the text before ever cutting one.
