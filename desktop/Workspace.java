@@ -73,6 +73,7 @@ final class Workspace extends JPanel {
         flowing=true;refresh();Activity.log("Get feedback: checking for new chats");
         host.scan(()->{
             if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Add a folder in Chats.");return;}
+            if(host.patterns.caughtUp()){flowing=false;refresh();Activity.log("No chats changed: no model call needed");host.status.setText("No new chats. You are all caught up.");return;}
             flowing=true;host.patterns.flow(connection);
         });
     }
@@ -102,7 +103,7 @@ final class Workspace extends JPanel {
     // ---- Home ----
     void refresh(){
         if(homeScroll!=null){if(homeAt<0)homeAt=homeScroll.getVerticalScrollBar().getValue();restoreHome();}
-        cards.removeAll();pause.setText(paused()?"Resume":"Pause");
+        analyze.setText(host.patterns!=null&&host.patterns.caughtUp()?"Check for new chats":"Get feedback");cards.removeAll();pause.setText(paused()?"Resume":"Pause");
         summary.setText(paused()?"Paused. RHI will not import or analyze until you resume in Settings.":"");summary.setVisible(paused());
         boolean any=store.tools.stream().anyMatch(t->!t.archived)||archived.isSelected()||!search.getText().isEmpty();search.getParent().getParent().setVisible(any);
         String query=search.getText().strip().toLowerCase(Locale.ROOT);

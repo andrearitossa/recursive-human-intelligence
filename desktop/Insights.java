@@ -10,7 +10,7 @@ final class Insights {
         Finding asRemoved(){return withDone(true);}
         Finding withDone(boolean done){return new Finding(name,description,message,you,better,actions,evidence,date,done);}
     }
-    static final int MAX_TOLD=60,MAX_CHARS=150000,EXCERPT=800;
+    static final int ROUNDS=4,MAX_TOLD=60,MAX_CHARS=150000,EXCERPT=800;
 
     static final String INSTRUCTIONS="""
         You have read everything one person typed to their AI assistants. You are the friend who then says: "I noticed this, here's what will get you past it."
@@ -35,7 +35,7 @@ final class Insights {
         - actions: exactly 1, or 2 if truly needed. text is one concrete sentence they can do today. source is the exact title of a real, well-known course or book that truly teaches this, only when it is a great fit, otherwise empty. Reference pages and manuals do not count. Never write a URL and never invent a title.
         - evidence: at least two refs, from tasks or excerpts, that directly show it.
         Banned: generic advice such as "write better prompts" or "use version control".
-        previouslyTold lists what they already heard or dismissed. Do not repeat any of it.
+        previouslyTold lists what they already heard or finished. Do not repeat or rephrase any of it. Each item must still be worth their time on its own: if only weak ideas remain, return {"items":[]}.
         Return exactly one JSON object with no Markdown fences:
         {"items":[{"name":"","description":"","message":"","you":"","better":"","actions":[{"text":"","source":""}],"evidence":["r1","t1"]}]}
         """;

@@ -107,39 +107,59 @@ final class PatternsPage extends JPanel {
         List<Patterns.Group> chosen=ready?scoped():null;String wanted=focus.getText().strip();List<Insights.Finding> told=new ArrayList<>(feedback);boolean selected0=selected.isEmpty();
         Map<String,ChatEngine.Request> copy=new LinkedHashMap<>(host.engine.requests);
         host.select("Home");host.workspace.thinking=true;host.workspace.refresh();
-        int[] next={0};
+        int[] next={0};long runStart=System.currentTimeMillis();boolean deep=selected0;String signature=signature();
         host.workspace.run("Writing your feedback…",true,()->{
             List<Patterns.Group> groups=chosen!=null?chosen:(llm.hasPatterns()?llm.result(copy):Patterns.analyze(copy)).groups();
             // With nothing selected the agent reads every described request, not just the samples.
             Map<String,String> tasks=new HashMap<>();llm.descriptions.forEach((id,d)->tasks.put(id,d.task()));
             List<Patterns.Item> described=new ArrayList<>();
             if(chosen==null||selected0)described.addAll(Patterns.distinct(copy));else for(Patterns.Group g:groups)described.addAll(g.items);
-            Map<String,Patterns.Item> refs=new HashMap<>();long now=System.currentTimeMillis();int[] shown={0};
             Map<String,Object> signals=Patterns.signals(copy);
             Activity.log("Signals: median "+signals.get("medianWords")+" words per request, "+signals.get("percentSixWordsOrFewer")+"% are six words or fewer, "+((List<?>)signals.get("phrasesRetypedAcrossChats")).size()+" phrases retyped across chats");
-            ItemStream stream=new ItemStream(m->{
-                Insights.Finding one=Insights.parseOne(m,refs,now);if(one==null)return;shown[0]++;
-                Activity.log("+ "+one.name()+"  ("+one.evidence().size()+" quotes"+(one.actions().stream().anyMatch(a->!a.source().isBlank())?", names a source":"")+(one.you().isEmpty()?"":", sharper version")+")");
-                SwingUtilities.invokeLater(()->{
-                    // Each new item lands right after the last one from this run, above older feedback.
-                    feedback.add(next[0]++,one);
-                    try{Insights.save(host.data.getParent(),feedback);}catch(Exception e){Activity.log("✕ could not save feedback");}
-                    host.status.setText("Writing your feedback… "+next[0]+" so far");renderReports();if(next[0]==1)host.workspace.scrollHomeToTop();
+            List<Insights.Finding> known=new ArrayList<>(told);Set<String> names=new HashSet<>();for(Insights.Finding f:told)names.add(f.name().toLowerCase(Locale.ROOT));
+            int total=0;boolean finished=false;
+            // One click does the whole job: keep looking until the agent has nothing strong left.
+            for(int round=1;round<=(deep?Insights.ROUNDS:1);round++){
+                int thisRound=round;
+                if(round>1)SwingUtilities.invokeLater(()->host.status.setText("Looking deeper… pass "+thisRound+" of up to "+Insights.ROUNDS));
+                Map<String,Patterns.Item> refs=new HashMap<>();long now=System.currentTimeMillis();int[] shown={0};
+                ItemStream stream=new ItemStream(m->{
+                    Insights.Finding one=Insights.parseOne(m,refs,now);if(one==null)return;
+                    if(!names.add(one.name().toLowerCase(Locale.ROOT))){Activity.log("- dropped \""+one.name()+"\": already told");return;}
+                    known.add(one);shown[0]++;
+                    Activity.log("+ "+one.name()+"  ("+one.evidence().size()+" quotes"+(one.actions().stream().anyMatch(a->!a.source().isBlank())?", names a source":"")+(one.you().isEmpty()?"":", sharper version")+")");
+                    SwingUtilities.invokeLater(()->{
+                        // Each new item lands right after the last one from this run, above older feedback.
+                        // Counted fresh each time: items can be removed or marked done while a run continues.
+                        int at=0;while(at<feedback.size()&&feedback.get(at).date()>=runStart)at++;
+                        feedback.add(at,one);next[0]++;
+                        try{Insights.save(host.data.getParent(),feedback);}catch(Exception e){Activity.log("✕ could not save feedback");}
+                        if(host.busy)host.status.setText("Writing your feedback… "+next[0]+" so far");renderReports();if(next[0]==1)host.workspace.scrollHomeToTop();
+                    });
                 });
-            });
-            String sentInput=Insights.input(groups,described,tasks,refs,wanted,told,signals);
-            long lines=refs.keySet().stream().filter(k->k.startsWith("t")).count();
-            Activity.log("Feedback input: "+lines+" request lines, "+(refs.size()-lines)+" excerpts from "+groups.size()+" patterns, "+Math.min(told.size(),Insights.MAX_TOLD)+" earlier items to avoid"+(wanted.isEmpty()?"":", focus set"));
-            String response=connection.stream(Insights.INSTRUCTIONS,sentInput,stream::accept);
-            if(shown[0]==0)Insights.parse(response,refs);
-            return shown[0];
+                String sentInput=Insights.input(groups,described,tasks,refs,wanted,known,signals);
+                long lines=refs.keySet().stream().filter(k->k.startsWith("t")).count();
+                Activity.log("Pass "+round+" input: "+lines+" request lines, "+(refs.size()-lines)+" excerpts from "+groups.size()+" patterns, "+Math.min(known.size(),Insights.MAX_TOLD)+" earlier items to avoid"+(wanted.isEmpty()?"":", focus set"));
+                try{
+                    String response=connection.stream(Insights.INSTRUCTIONS,sentInput,stream::accept);
+                    if(shown[0]==0){Insights.parse(response,refs);Activity.log("Pass "+round+": nothing new and strong enough, stopping");finished=true;break;}
+                    Activity.log("Pass "+round+": "+shown[0]+" new items");total+=shown[0];
+                }catch(InterruptedException e){throw e;}
+                catch(Exception e){if(total==0)throw e;Activity.log("✕ pass "+round+" failed; keeping what already arrived");return new int[]{total,0};}
+                if(round==Insights.ROUNDS)finished=true;
+            }
+            return new int[]{total,finished?1:0};
         },out->{
-            int count=(Integer)out;
-            host.status.setText(count==0?"Nothing new to say.":count+(count==1?" new item.":" new items."));Activity.log("Feedback done: "+count+" items");
+            int[] outcome=(int[])out;int count=outcome[0];
+            if(deep&&outcome[1]==1){host.settings.setProperty("feedback.over",signature);try{host.saveSettings();}catch(Exception e){Activity.log("✕ could not save settings");}}
+            host.status.setText(count==0?"Nothing new to say.":count+(count==1?" new item.":" new items.")+(deep&&outcome[1]==1?" That is everything from these chats.":""));Activity.log("Feedback done: "+count+" items");
             renderReports();
         });
         host.workspace.scrollHomeToTop();
     }
+    /** What the last complete read covered. It changes with chats or focus, and only then is another read worthwhile. */
+    String signature(){return host.engine.requests.keySet().hashCode()+"/"+focus.getText().strip().hashCode();}
+    boolean caughtUp(){return signature().equals(host.settings.getProperty("feedback.over"));}
     /** Reads requests in batches and regroups, with the map growing as each batch returns. */
     void runAi(){
         Models.Model connection=host.workspace.connectOrAsk();if(connection!=null)runAi(connection,null);
@@ -193,6 +213,13 @@ final class PatternsPage extends JPanel {
         }
         results.revalidate();results.repaint();host.workspace.refresh();
     }
+    /** Unlike done, removal forgets the item: the agent may raise it again, and a new full read is unlocked. */
+    void removeFeedback(Insights.Finding f){feedback.remove(f);afterRemoval(f.name()+" removed.");}
+    private void afterRemoval(String message){
+        host.settings.remove("feedback.over");
+        try{Insights.save(host.data.getParent(),feedback);host.saveSettings();}catch(Exception e){host.error(e);}
+        Activity.log(message);host.status.setText(message);renderReports();
+    }
     boolean hasFeedback(){return !feedback.isEmpty();}
     void setDone(Insights.Finding f,boolean done){
         // Done items stay on file, so the agent knows not to bring them back.
@@ -209,7 +236,7 @@ final class PatternsPage extends JPanel {
         Color rest=done?Ui.BG:Color.WHITE;
         JPanel row=new JPanel(new BorderLayout(12,0));row.setBackground(rest);row.setBorder(new CompoundBorder(new MatteBorder(0,0,1,0,Ui.LINE),new EmptyBorder(done?9:14,18,done?9:14,12)));row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         Ui.Stack text=new Ui.Stack();text.put(Ui.label(f.name(),done?Ui.sans(Font.PLAIN,14):Ui.serif(19),done?Ui.MUTED:Ui.INK));if(!done)text.put(Ui.label(f.description(),Ui.sans(Font.PLAIN,14),Ui.MUTED),2);row.add(text,BorderLayout.CENTER);
-        JButton mark=quiet(done?"Undo":"Mark as done");mark.addActionListener(e->setDone(f,!done));JPanel east=new JPanel(new GridBagLayout());east.setOpaque(false);east.add(mark);row.add(east,BorderLayout.EAST);
+        JButton mark=quiet(done?"Undo":"Mark as done");mark.addActionListener(e->setDone(f,!done));JPanel east=new JPanel(new GridBagLayout());east.setOpaque(false);east.add(mark);if(done){JButton gone=quiet("Remove");gone.addActionListener(e->removeFeedback(f));east.add(gone);}row.add(east,BorderLayout.EAST);
         MouseAdapter open=new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){detail(f);}@Override public void mouseEntered(MouseEvent e){if(!done)row.setBackground(new Color(251,252,249));}@Override public void mouseExited(MouseEvent e){row.setBackground(rest);}};row.addMouseListener(open);text.addMouseListener(open);
         return row;
     }
@@ -234,7 +261,7 @@ final class PatternsPage extends JPanel {
         for(Insights.Quote q:f.evidence()){String t=q.text().replaceAll("\\s+"," ");quotes.put(Ui.prose("“"+(t.length()>220?t.substring(0,220)+"…":t)+"”",Ui.MUTED),8);}
         why.addActionListener(e->{quotes.setVisible(!quotes.isVisible());body.revalidate();});
         JButton remove=Ui.button(f.removed()?"Undo":"Mark as done");remove.addActionListener(e->{setDone(f,!f.removed());dialog.dispose();});
-        body.put(Ui.row(why,remove),18);body.put(quotes);body.end();
+        JButton erase=quiet("Remove");erase.addActionListener(e->{removeFeedback(f);dialog.dispose();});body.put(Ui.row(why,remove,erase),18);body.put(quotes);body.end();
         dialog.setContentPane(Ui.scroll(body));dialog.getContentPane().setBackground(Ui.BG);dialog.setSize(640,560);dialog.setLocationRelativeTo(host.frame);Ui.closeOnEscape(dialog);dialog.setVisible(true);
     }
     /** A web search for the exact title always works, unlike a link a model might invent. */
