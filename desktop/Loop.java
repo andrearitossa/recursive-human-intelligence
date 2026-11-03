@@ -50,7 +50,7 @@ public final class Loop {
 
     Loop(){
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
-        frame.addWindowListener(new WindowAdapter(){@Override public void windowClosing(WindowEvent e){if(tray!=null)frame.setVisible(false);else quit();}});
+        frame.addWindowListener(new WindowAdapter(){@Override public void windowClosing(WindowEvent e){if(tray!=null){frame.setVisible(false);if(!"true".equals(settings.getProperty("tray.told"))){settings.setProperty("tray.told","true");try{saveSettings();}catch(IOException x){Activity.log("✕ could not save settings");}tray.displayMessage("RHI is still running","It stays in the tray for the weekly check. Quit it from the tray icon.",TrayIcon.MessageType.NONE);}}else quit();}});
         try{Path dir=data.getParent();Files.createDirectories(dir);Files.setPosixFilePermissions(dir,PosixFilePermissions.fromString("rwx------"));}catch(UnsupportedOperationException|IOException ignored){}
         loadState();
         workspace=new Workspace(this);patterns=new PatternsPage(this);
@@ -276,13 +276,27 @@ public final class Loop {
             tray=new TrayIcon(image,"RHI",menu);tray.setImageAutoSize(true);tray.addActionListener(e->SwingUtilities.invokeLater(this::reveal));SystemTray.getSystemTray().add(tray);
         }catch(Exception e){tray=null;}
     }
-    void reveal(){frame.setVisible(true);frame.setState(Frame.NORMAL);frame.toFront();}
+    void reveal(){frame.setVisible(true);frame.setState(Frame.NORMAL);frame.setAlwaysOnTop(true);frame.toFront();frame.setAlwaysOnTop(false);}
     void quit(){
         workspace.autosave();
         if(busy){quitRequested=true;stopped.set(true);workspace.interrupt();status.setText("Stopping, then quitting…");return;}
         workspace.timer.stop();if(tray!=null)SystemTray.getSystemTray().remove(tray);frame.dispose();
         try{if(instanceLock!=null)instanceLock.release();if(instanceChannel!=null)instanceChannel.close();}catch(IOException ignored){}
         System.exit(0);
+    }
+    /** Opening RHI again shows the running window. The port is on this computer only, and a connection carries no data. */
+    private static void listenForReopen(Path directory){
+        try{
+            java.net.ServerSocket server=new java.net.ServerSocket(0,4,java.net.InetAddress.getLoopbackAddress());
+            Files.writeString(directory.resolve("instance.port"),""+server.getLocalPort());
+            Thread t=new Thread(()->{while(true){try(java.net.Socket ignored=server.accept()){SwingUtilities.invokeLater(()->{if(instance!=null)instance.reveal();});}catch(IOException e){return;}}},"reopen");t.setDaemon(true);t.start();
+        }catch(IOException e){Activity.log("Could not listen for a second launch");}
+    }
+    private static boolean askRunningToOpen(Path directory){
+        try(java.net.Socket s=new java.net.Socket()){
+            int port=Integer.parseInt(Files.readString(directory.resolve("instance.port")).strip());
+            s.connect(new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(),port),2000);return true;
+        }catch(Exception e){return false;}
     }
     public static void main(String[] args){
         if(args.length>0){
@@ -295,7 +309,8 @@ public final class Loop {
             Path directory=Path.of(System.getProperty("user.home"),".loop");Files.createDirectories(directory);
             instanceChannel=java.nio.channels.FileChannel.open(directory.resolve("instance.lock"),StandardOpenOption.CREATE,StandardOpenOption.WRITE);
             instanceLock=instanceChannel.tryLock();
-            if(instanceLock==null){JOptionPane.showMessageDialog(null,"RHI is already running. Open it from the tray, or quit it there before restarting.");instanceChannel.close();return;}
+            if(instanceLock==null){instanceChannel.close();if(!askRunningToOpen(directory))JOptionPane.showMessageDialog(null,"RHI is already running. Open it from the tray.");return;}
+            listenForReopen(directory);
         }catch(Exception e){JOptionPane.showMessageDialog(null,"Could not open your RHI data: "+e.getMessage());return;}
         SwingUtilities.invokeLater(()->{Ui.install();instance=new Loop();});
     }

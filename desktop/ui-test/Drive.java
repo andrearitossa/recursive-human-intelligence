@@ -280,6 +280,7 @@ public class Drive {
     ok(!Files.exists(Insights.file(home.resolve(".loop")))&&!Files.exists(l.data)&&!Files.exists(home.resolve(".loop/solutions.json"))&&l.workspace.store.tools.isEmpty()&&l.engine.requests.isEmpty(),"delete removes history & solutions");
     ok(Files.exists(home.resolve(".claude/projects/-work-reports/s0.jsonl")),"original transcripts untouched");
     try(var ls=Files.list(home.resolve(".loop"))){ok(ls.noneMatch(p->p.toString().endsWith(".html")),"artifacts deleted");}
+    {ui(()->l.frame.setVisible(false));Process second=new ProcessBuilder(System.getProperty("java.home")+"/bin/java","-Duser.home="+home,"-cp",System.getProperty("java.class.path"),"Loop").start();boolean ended=second.waitFor(15,java.util.concurrent.TimeUnit.SECONDS);if(!ended)second.destroyForcibly();pause(400);ok(ended&&l.frame.isVisible(),"opening RHI again shows the running window, with no error");}
     System.out.println("\n"+passes+" passed, "+fails+" failed");
     Runtime.getRuntime().addShutdownHook(new Thread(()->System.out.println("quit clean")));
     ui(l::quit);
