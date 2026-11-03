@@ -57,20 +57,22 @@ Every item quotes your own messages, so you can check it.
 | **Removed first** | Obvious credentials. Names and other personal details in your messages can remain, so remove sensitive chats or skip project folders first |
 | **Your API key** | Encrypted by Windows, macOS Keychain, or the Linux keyring. Without one, it stays in memory for that session |
 
-RHI also looks in other Windows and WSL profiles on your computer that you can access. You can turn this off in **Settings → Sources**.
+RHI also looks in other profiles you can access: WSL home folders when running on Windows, and folders under `C:\Users` when running inside WSL. You can turn this off in **Settings → Sources**.
 
 <details>
 <summary><b>Details: providers, patterns, files, building from source</b></summary>
 
 ### Use it
 
-Click **Get feedback** on Home. One click is a complete read: the agent keeps looking, up to four passes, until nothing strong is left. The button then becomes **Check for new chats**, which calls the model only if your chats changed. That one button does everything in order: asks for your AI connection if it is missing, checks for new chats, reads and groups what is new, and writes your feedback. Items appear as they arrive, and you can open them while it is still working.
+Click **Get feedback** on Home. One click is a complete read: the agent keeps looking, up to ten passes, until nothing strong is left. Home shows which pass is running, and **One more pass** asks for another whenever you want. The main button then becomes **Check for new chats**, which calls the model only if your chats changed. That one button does everything in order: asks for your AI connection if it is missing, checks for new chats, reads and groups what is new, and writes your feedback. Items appear as they arrive, and you can open them while it is still working.
+
+Every Sunday at 16:00 on your computer's clock, while RHI is running, it reads new chats, gets feedback, and sends a desktop notification. If RHI was closed, this happens soon after the next launch. This sends excerpts to your provider without asking each time, and only once you have connected a model and allowed sending. Turn it off in **Settings → Background**.
 
 **Patterns** and **Chats** are there to explore and to narrow things down; you never need them. The **>** at the bottom opens logs of each step: API calls with sizes, timing, and tokens, what each batch produced, each pattern and item as it lands, and anything dropped and why. Logs show model-written names, never keys or your messages.
 
 ### Patterns
 
-1. **Patterns** starts as a quick local keyword map, with nothing sent. **Analyze with AI** reads your requests in batches of up to 250, keeping similar ones together, using the model from Settings, after stating how much will be sent. The map grows by area as batches return, then settles into named patterns grouped from the short descriptions alone. Results are saved, so later runs read only new requests. Chats are always counted locally. **Focus on** is optional and steers grouping and findings. Click bubbles to choose what to analyze, or click a color to filter.
+1. **Patterns** starts as a quick local keyword map, with nothing sent. **Analyze with AI** reads your requests in batches of up to 250, keeping similar ones together, using the model from Settings, after stating how much will be sent. The map grows by area as batches return, then settles into named patterns grouped from the short descriptions alone. Results are saved, so later runs read and group only new requests, placing them into your existing patterns. **Regroup** rebuilds the map from everything. Chats are always counted locally. **Focus on** is optional and steers grouping and findings. Click bubbles to choose what to analyze, or click a color to filter.
 2. **Get feedback**, on Home or Patterns, opens Home and sends the one-line description of every request, plus excerpts from your patterns, to your model. It returns a short list of named items. Click one for the detail, what to do, and a search for any source it names. Items must quote at least two real messages. Phrases you retype across chats are measured locally and shown to the agent. **Mark as done** moves an item to a hidden list below, where **Undo** brings it back, and it will not be suggested again. **Remove**, on done items and in the detail view, forgets an item so it can come back.
 
 ### Connect a model

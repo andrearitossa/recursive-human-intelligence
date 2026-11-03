@@ -51,6 +51,13 @@ public final class Ui {
     static void fit(AbstractButton b,Font widest,String longest){
         var m=b.getFontMetrics(widest);java.awt.Insets in=b.getInsets();b.setPreferredSize(new Dimension(m.stringWidth(longest)+in.left+in.right+8,m.getHeight()+in.top+in.bottom));
     }
+    /** The RHI mark: a burgundy tile with an R, drawn at any size. */
+    static java.awt.image.BufferedImage icon(int size){
+        var i=new java.awt.image.BufferedImage(size,size,java.awt.image.BufferedImage.TYPE_INT_ARGB);Graphics2D g=i.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+        g.setColor(ACCENT);g.fillRoundRect(0,0,size,size,size/4,size/4);
+        g.setColor(BG);g.setFont(BASE.deriveFont(Font.BOLD,size*.82f));FontMetrics m=g.getFontMetrics();g.drawString("R",(size-m.stringWidth("R"))/2f,(size+m.getAscent()-m.getDescent())/2f);g.dispose();return i;
+    }
     /** Every detail window closes with Esc. */
     static void closeOnEscape(JDialog d){d.getRootPane().registerKeyboardAction(e->d.dispose(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);}
     public static final class ThinBar extends javax.swing.plaf.basic.BasicScrollBarUI {

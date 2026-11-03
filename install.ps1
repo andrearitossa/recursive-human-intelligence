@@ -14,5 +14,7 @@ try {
   $shell = New-Object -ComObject WScript.Shell
   $link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'RHI.lnk'))
   $link.TargetPath = "$target\RHI.exe"; $link.Save()
-  Write-Host "RHI is installed. Find it in the Start menu, or run: $target\RHI.exe"
+  $desktop = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'RHI.lnk'))
+  $desktop.TargetPath = "$target\RHI.exe"; $desktop.Save()
+  Write-Host "RHI is installed. Find it on your desktop and in the Start menu, or run: $target\RHI.exe"
 } finally { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }

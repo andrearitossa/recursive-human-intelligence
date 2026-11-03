@@ -75,7 +75,7 @@ final class PatternsPage extends JPanel {
         detail.removeAll();
         if(selected.isEmpty()){
             detail.put(Ui.section("All patterns"));
-            int shown=0;for(Patterns.Group g:visible()){shown++;JButton row=new JButton(g.label+"  ("+g.sessions.size()+")");row.setHorizontalAlignment(SwingConstants.LEFT);row.setFocusPainted(false);row.setContentAreaFilled(false);row.setBorder(new EmptyBorder(5,0,5,0));row.setForeground(Ui.INK);row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));row.addActionListener(e->toggle(g));
+            int shown=0;List<Patterns.Group> byChats=new ArrayList<>(visible());byChats.sort((a,b)->b.sessions.size()-a.sessions.size());for(Patterns.Group g:byChats){shown++;JButton row=new JButton(g.label+"  ("+g.sessions.size()+")");row.setHorizontalAlignment(SwingConstants.LEFT);row.setFocusPainted(false);row.setContentAreaFilled(false);row.setBorder(new EmptyBorder(5,0,5,0));row.setForeground(Ui.INK);row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));row.addActionListener(e->toggle(g));
                 row.addMouseListener(new MouseAdapter(){@Override public void mouseEntered(MouseEvent e){map.hover=g;row.setForeground(COLORS.get(g.dominant()));map.repaint();}@Override public void mouseExited(MouseEvent e){map.hover=null;row.setForeground(Ui.INK);map.repaint();}});detail.put(row,shown==1?6:0);}
         }else for(Patterns.Group g:selected){
             detail.put(Ui.label(g.label,Ui.sans(Font.BOLD,15),COLORS.get(g.dominant())),detail.getComponentCount()==0?0:18);
@@ -107,8 +107,8 @@ final class PatternsPage extends JPanel {
         List<Patterns.Group> chosen=ready?scoped():null;String wanted=focus.getText().strip();List<Insights.Finding> told=new ArrayList<>(feedback);boolean selected0=selected.isEmpty();
         Map<String,ChatEngine.Request> copy=new LinkedHashMap<>(host.engine.requests);
         host.select("Home");host.workspace.thinking=true;host.workspace.refresh();
-        int[] next={0};long runStart=System.currentTimeMillis();boolean deep=selected0;String signature=signature();
-        host.workspace.run("Writing your feedback…",true,()->{
+        int[] next={0};long runStart=System.currentTimeMillis();boolean deep=selected0;String signature=signature();boolean extra=oneMore&&deep;oneMore=false;int base=extra?passesDone():0,rounds=!deep||extra?1:Insights.ROUNDS;if(deep){runNew=0;runLimit=base+rounds;runExtra=extra;}
+        host.workspace.run("Writing your feedback…",!host.workspace.auto,()->{
             List<Patterns.Group> groups=chosen!=null?chosen:(llm.hasPatterns()?llm.result(copy):Patterns.analyze(copy)).groups();
             // With nothing selected the agent reads every described request, not just the samples.
             Map<String,String> tasks=new HashMap<>();llm.descriptions.forEach((id,d)->tasks.put(id,d.task()));
@@ -119,9 +119,9 @@ final class PatternsPage extends JPanel {
             List<Insights.Finding> known=new ArrayList<>(told);Set<String> names=new HashSet<>();for(Insights.Finding f:told)names.add(f.name().toLowerCase(Locale.ROOT));
             int total=0;boolean finished=false;
             // One click does the whole job: keep looking until the agent has nothing strong left.
-            for(int round=1;round<=(deep?Insights.ROUNDS:1);round++){
+            for(int round=1;round<=rounds;round++){
                 int thisRound=round;
-                if(round>1)SwingUtilities.invokeLater(()->host.status.setText("Looking deeper… pass "+thisRound+" of up to "+Insights.ROUNDS));
+                if(deep)SwingUtilities.invokeLater(()->{runPass=base+thisRound;savePasses(signature,base+thisRound-1,"stopped");if(thisRound>1)host.status.setText(passText());});
                 Map<String,Patterns.Item> refs=new HashMap<>();long now=System.currentTimeMillis();int[] shown={0};
                 ItemStream stream=new ItemStream(m->{
                     Insights.Finding one=Insights.parseOne(m,refs,now);if(one==null)return;
@@ -132,7 +132,7 @@ final class PatternsPage extends JPanel {
                         // Each new item lands right after the last one from this run, above older feedback.
                         // Counted fresh each time: items can be removed or marked done while a run continues.
                         int at=0;while(at<feedback.size()&&feedback.get(at).date()>=runStart)at++;
-                        feedback.add(at,one);next[0]++;
+                        feedback.add(at,one);next[0]++;runNew=next[0];
                         try{Insights.save(host.data.getParent(),feedback);}catch(Exception e){Activity.log("✕ could not save feedback");}
                         if(host.busy)host.status.setText("Writing your feedback… "+next[0]+" so far");renderReports();if(next[0]==1)host.workspace.scrollHomeToTop();
                     });
@@ -142,25 +142,78 @@ final class PatternsPage extends JPanel {
                 Activity.log("Pass "+round+" input: "+lines+" request lines, "+(refs.size()-lines)+" excerpts from "+groups.size()+" patterns, "+Math.min(known.size(),Insights.MAX_TOLD)+" earlier items to avoid"+(wanted.isEmpty()?"":", focus set"));
                 try{
                     String response=connection.stream(Insights.INSTRUCTIONS,sentInput,stream::accept);
-                    if(shown[0]==0){Insights.parse(response,refs);Activity.log("Pass "+round+": nothing new and strong enough, stopping");finished=true;break;}
+                    if(shown[0]==0){Insights.parse(response,refs);Activity.log("Pass "+round+": nothing new and strong enough, stopping");finished=true;if(deep){int doneNow=base+round;SwingUtilities.invokeLater(()->savePasses(signature,doneNow,"clear"));}break;}
                     Activity.log("Pass "+round+": "+shown[0]+" new items");total+=shown[0];
+                    if(deep){int doneNow=base+round;SwingUtilities.invokeLater(()->savePasses(signature,doneNow,"open"));}
                 }catch(InterruptedException e){throw e;}
-                catch(Exception e){if(total==0)throw e;Activity.log("✕ pass "+round+" failed; keeping what already arrived");return new int[]{total,0};}
-                if(round==Insights.ROUNDS)finished=true;
+                catch(Exception e){if(deep&&!host.stopped.get()){int before=base+round-1;SwingUtilities.invokeLater(()->savePasses(signature,before,"failed"));}if(total==0)throw e;Activity.log("✕ pass "+round+" failed; keeping what already arrived");return new int[]{total,0};}
+                if(round==rounds&&!extra)finished=true;
             }
             return new int[]{total,finished?1:0};
         },out->{
-            int[] outcome=(int[])out;int count=outcome[0];
+            int[] outcome=(int[])out;int count=outcome[0];if(host.workspace.auto)host.workspace.weeklyDone(count);
             if(deep&&outcome[1]==1){host.settings.setProperty("feedback.over",signature);try{host.saveSettings();}catch(Exception e){Activity.log("✕ could not save settings");}}
             host.status.setText(count==0?"Nothing new to say.":count+(count==1?" new item.":" new items.")+(deep&&outcome[1]==1?" That is all for now.":""));Activity.log("Feedback done: "+count+" items");
             renderReports();
         });
         host.workspace.scrollHomeToTop();
     }
+    volatile boolean oneMore;
+    volatile int runPass,runLimit,runNew;volatile boolean runExtra;
+    final PassStrip passes=new PassStrip();
+    /** Passes count for the current chats and focus; new chats start the count again. */
+    int passesDone(){if(!signature().equals(host.settings.getProperty("feedback.passes.for")))return 0;try{return Integer.parseInt(host.settings.getProperty("feedback.passes","0"));}catch(NumberFormatException e){return 0;}}
+    private void savePasses(String forSignature,int done,String end){
+        host.settings.setProperty("feedback.passes.for",forSignature);host.settings.setProperty("feedback.passes",""+done);host.settings.setProperty("feedback.passes.end",end);
+        try{host.saveSettings();}catch(Exception e){Activity.log("✕ could not save settings");}
+        passes.update();
+    }
+    void passRunEnded(){runPass=0;passes.update();}
+    String passText(){
+        if(runPass>0)return (runExtra?"Pass "+runPass:"Pass "+runPass+" of up to "+runLimit)+(runNew>0?"  ·  "+runNew+(runNew==1?" new item":" new items"):"");
+        int done=passesDone();String end=host.settings.getProperty("feedback.passes.end","");String count=done+(done==1?" pass":" passes");
+        if(end.equals("stopped"))return "Stopped during pass "+(done+1);
+        if(end.equals("failed"))return "Pass "+(done+1)+" could not finish";
+        if(done==0)return "Want more?";
+        return end.equals("clear")?count+". The last found nothing new.":count+" so far";
+    }
+    String passHint(){
+        if(runPass>0)return runExtra?"Rereading your chats for what earlier passes missed.":"Each pass rereads your chats for what the last one missed. It ends when nothing strong is left.";
+        return "One more pass makes one call to your model.";
+    }
+    /** Shows which pass is running and offers another one when none is. */
+    final class PassStrip extends JPanel{
+        final JLabel line=new JLabel(),hint=new JLabel();final JButton more=Ui.button("One more pass");boolean blink;
+        final JComponent meter=new JComponent(){
+            @Override public Dimension getPreferredSize(){return new Dimension(100,8);}
+            @Override protected void paintComponent(Graphics graphics){
+                Graphics2D g=(Graphics2D)graphics;g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                int running=runPass,done=running>0?running-1:passesDone(),slots=Math.max(Insights.ROUNDS,Math.max(running,done));
+                int gap=4,w=Math.min(26,(getWidth()-gap*(slots-1))/Math.max(1,slots));
+                for(int i=0;i<slots;i++){g.setColor(i<done?Ui.ACCENT:i==done&&running>0?(blink?Ui.ACCENT:Ui.LINE):Ui.LINE);g.fillRoundRect(i*(w+gap),1,w,5,5,5);}
+            }
+        };
+        final javax.swing.Timer pulse=new javax.swing.Timer(600,e->{blink=!blink;meter.repaint();});
+        PassStrip(){
+            super(new BorderLayout(14,0));setOpaque(false);setBorder(new EmptyBorder(6,0,10,0));
+            line.setFont(Ui.sans(Font.BOLD,13));line.setForeground(Ui.INK);hint.setFont(Ui.sans(Font.PLAIN,12));hint.setForeground(Ui.MUTED);
+            Ui.Stack text=new Ui.Stack();text.put(line);text.put(meter,5);text.put(hint,5);text.end();add(text,BorderLayout.CENTER);
+            more.setToolTipText("Rereads your chats once more, for what earlier passes missed");more.addActionListener(e->host.workspace.onePass());
+            JPanel side=new JPanel(new GridBagLayout());side.setOpaque(false);side.add(more);add(side,BorderLayout.EAST);
+        }
+        void update(){
+            boolean on=runPass>0;line.setText(passText());hint.setText(passHint());more.setVisible(!on);more.setEnabled(!host.busy);
+            if(on&&!pulse.isRunning())pulse.start();if(!on)pulse.stop();revalidate();repaint();
+        }
+    }
     /** What the last complete read covered. It changes with chats or focus, and only then is another read worthwhile. */
     String signature(){return host.engine.requests.keySet().hashCode()+"/"+focus.getText().strip().hashCode();}
     boolean caughtUp(){return signature().equals(host.settings.getProperty("feedback.over"));}
     /** Reads requests in batches and regroups, with the map growing as each batch returns. */
+    private volatile long lastProgress;
+    /** The model can think for a minute before its first word, so the wait is shown, not hidden. */
+    private javax.swing.Timer waiting;
+    private void startWaiting(){if(waiting==null)waiting=new javax.swing.Timer(1000,e->{long quiet=(System.currentTimeMillis()-lastProgress)/1000;if(quiet>=3){String t="The model is thinking… "+quiet+"s";ticker.setText(t);host.status.setText(t);}});waiting.start();}
     void runAi(){
         Models.Model connection=host.workspace.connectOrAsk();if(connection!=null)runAi(connection,null);
     }
@@ -169,17 +222,18 @@ final class PatternsPage extends JPanel {
         List<Patterns.Item> todo=llm.pending(copy);
         if(todo.isEmpty()&&llm.descriptions.isEmpty()){host.status.setText("Import your chats first.");return;}
         // Reading sends far more than other steps, so the amount is stated every time.
-        if(!todo.isEmpty()&&JOptionPane.showConfirmDialog(host.frame,"Send "+todo.size()+" requests to "+host.workspace.provider.getSelectedItem()+"?\nEach is cut to "+LlmPatterns.EXCERPT+" characters, about "+Math.max(1,LlmPatterns.characters(todo)/1000)+"k characters in total. Obvious credentials are removed, but names and other details may remain.","Analyze with AI",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;
+        if(!todo.isEmpty()&&!host.workspace.auto&&JOptionPane.showConfirmDialog(host.frame,"Send "+todo.size()+" requests to "+host.workspace.provider.getSelectedItem()+"?\nEach is cut to "+LlmPatterns.EXCERPT+" characters, about "+Math.max(1,LlmPatterns.characters(todo)/1000)+"k characters in total. Obvious credentials are removed, but names and other details may remain.","Analyze with AI",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;
         String wanted=focus.getText().strip();
-        host.workspace.flowing=after!=null;running=true;selected.clear();modeFilter=null;liveBar.setVisible(true);reading.setValue(0);reading.setIndeterminate(todo.isEmpty());ticker.setText(" ");
+        llm.full=after==null&&todo.isEmpty(); // Only Regroup redoes old requests.
+        host.workspace.flowing=after!=null;running=true;lastProgress=System.currentTimeMillis();startWaiting();selected.clear();modeFilter=null;liveBar.setVisible(true);reading.setValue(0);reading.setIndeterminate(todo.isEmpty());ticker.setText(" ");
         overview.setText(todo.isEmpty()?"Grouping…":"Reading 0 of "+todo.size()+"…");
-        host.workspace.run("Analyzing your requests…",true,()->{
+        host.workspace.run("Analyzing your requests…",!host.workspace.auto,()->{
             llm.run(connection,copy,wanted,(stage,done,total,latest)->SwingUtilities.invokeLater(()->{
                 reading.setIndeterminate(false);reading.setMaximum(Math.max(1,total));reading.setValue(done);
                 String now=stage.equals("Grouping")?"Grouping… "+done+(done==1?" pattern":" patterns")+" so far":"Reading "+done+" of "+total+" requests…";
                 overview.setText(now);host.status.setText(now);if(stage.equals("Grouping"))reading.setIndeterminate(true);
-                if(!latest.isEmpty())ticker.setText((stage.equals("Grouping")?"Found: ":"“")+latest+(stage.equals("Grouping")?"":"”"));
-                result=llm.live(copy);rebind();bars.repaint();map.layoutBubbles();renderDetail();
+                lastProgress=System.currentTimeMillis();if(!latest.isEmpty())ticker.setText((stage.equals("Grouping")?"Found: ":"“")+latest+(stage.equals("Grouping")?"":"”"));
+                if(stage.equals("Grouping")&&done>0){result=llm.live(copy);rebind();bars.repaint();map.layoutBubbles();renderDetail();}
             }));
             return null;
         },out->{finishRun(copy,null);if(after!=null)after.run();});
@@ -196,8 +250,8 @@ final class PatternsPage extends JPanel {
         t.addActionListener(e->{if(!host.busy){t.stop();if(running)finishRun(new LinkedHashMap<>(host.engine.requests),host.status.getText());}});t.start();
     }
     private void finishRun(Map<String,ChatEngine.Request> copy,String message){
-        running=false;liveBar.setVisible(false);
-        result=llm.hasPatterns()?llm.result(copy):Patterns.analyze(copy);analyzedSignature=host.engine.requests.keySet().hashCode();selected.clear();render();
+        running=false;if(waiting!=null)waiting.stop();liveBar.setVisible(false);
+        result=llm.hasPatterns()?llm.result(copy):Patterns.analyze(copy);analyzedSignature=host.engine.requests.keySet().hashCode();rebind();render();
         if(message!=null)host.status.setText(message);
         else host.status.setText(llm.failedBatches>0?llm.failedBatches+(llm.failedBatches==1?" batch":" batches")+" could not be read. Run it again to retry.":result.groups().size()+" patterns found.");
     }
@@ -219,6 +273,21 @@ final class PatternsPage extends JPanel {
         host.settings.remove("feedback.over");
         try{Insights.save(host.data.getParent(),feedback);host.saveSettings();}catch(Exception e){host.error(e);}
         Activity.log(message);host.status.setText(message);renderReports();
+    }
+    /** Removes every trace of deleted requests. Feedback that no longer has two real quotes goes too. */
+    void forget(Set<String> ids,boolean wasCaughtUp){
+        try{
+            llm.forget(ids);
+            List<Insights.Finding> kept=new ArrayList<>();
+            for(Insights.Finding f:feedback){List<Insights.Quote> left=new ArrayList<>();for(Insights.Quote q:f.evidence())if(!ids.contains(q.id()))left.add(q);if(left.size()>=2)kept.add(new Insights.Finding(f.name(),f.description(),f.message(),f.you(),f.better(),f.actions(),left,f.date(),f.removed()));}
+            int dropped=feedback.size()-kept.size();feedback.clear();feedback.addAll(kept);Insights.save(host.data.getParent(),feedback);
+            for(Solutions.Tool t:host.workspace.store.tools)t.evidence.removeAll(ids);host.workspace.store.save();
+            java.nio.file.Files.deleteIfExists(host.data.resolveSibling("insights.json")); // Old reports held quoted chat text.
+            // Deleting needs no new paid read.
+            if(wasCaughtUp)host.settings.setProperty("feedback.over",signature());
+            Activity.log("Deleted "+ids.size()+" requests from patterns and feedback"+(dropped>0?", and "+dropped+" feedback items that relied on them":""));
+        }catch(Exception e){host.error(e);}
+        analyzedSignature=-1;renderReports();if(isShowing())refresh();
     }
     boolean hasFeedback(){return !feedback.isEmpty();}
     void setDone(Insights.Finding f,boolean done){
@@ -319,7 +388,7 @@ final class PatternsPage extends JPanel {
         }
         void layoutBubbles(){
             bubbles.clear();List<Patterns.Group> groups=visible();int w=getWidth(),h=getHeight();if(groups.isEmpty()||w<50||h<50){shown.clear();repaint();return;}
-            double area=0;for(Patterns.Group g:groups)area+=g.sessions.size();
+            double area=0;for(Patterns.Group g:groups)area+=g.sessions.size();if(running)area=Math.max(area,result.sessions()*3.0); // A fixed scale while growing, so bubbles stay put.
             double unit=Math.sqrt(w*h*0.50/(Math.PI*area));
             double biggest=Math.min(w,h)*.26;
             // Shrinks until every bubble fits, so none is ever cut off, however few or many there are.

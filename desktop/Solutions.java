@@ -105,7 +105,8 @@ final class Solutions {
         Set<String> all=new HashSet<>(left);all.addAll(right);left.retainAll(right);return !all.isEmpty()&&(double)left.size()/all.size()>=0.7;
     }
     static Object parseModel(String response)throws IOException{
-        try{return Json.parse(strip(response));}
+        String text=strip(response);int open=text.indexOf('{'),close=text.lastIndexOf('}');if(open>=0&&close>open)text=text.substring(open,close+1); // Models sometimes add a sentence around the JSON.
+        try{return Json.parse(text);}
         catch(IllegalArgumentException e){throw new IOException("The model did not return valid JSON. Nothing was saved. Try again or choose another model.");}
     }
     static String strip(String text){text=text.strip();if(text.startsWith("```")){int start=text.indexOf('\n'),end=text.lastIndexOf("```");if(start>=0&&end>start)text=text.substring(start+1,end);}return text;}

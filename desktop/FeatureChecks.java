@@ -63,6 +63,8 @@ final class FeatureChecks {
             Map<String,ChatEngine.Request> taken=chats.removeSessions(Set.of("drop"));check(chats.requests.size()==1&&taken.size()==1,"Chat removed");
             chats.stamps.clear();chats.scan(root,()->false,u->{});check(chats.requests.size()==1,"Removed chat stays removed on re-import");
             chats.save(gone.resolve("h.tsv"));chats.saveRemoved(gone.resolve("r.txt"));ChatEngine again=new ChatEngine();again.load(gone.resolve("h.tsv"));again.loadRemoved(gone.resolve("r.txt"));again.scan(root,()->false,u->{});check(again.requests.size()==1,"Removal survives restart");
+            ChatEngine all=new ChatEngine();all.scan(root,()->false,u->{});all.removeSessions(Set.of("keep","drop"));all.scan(root,()->false,u->{});check(all.requests.isEmpty(),"Everything removed stays removed");all.readd(gone);all.scan(root,()->false,u->{});check(all.requests.size()==2&&all.removed.isEmpty(),"Adding the folder again brings chats back");all.removeSessions(Set.of("drop"));all.scan(root,()->false,u->{});check(all.requests.size()==1,"A later removal still holds");
+            Files.write(gone.resolve("bad.jsonl"),new byte[]{'{','"','r','o','l','e','"',':','"','u','s','e','r','"',',','"','c','o','n','t','e','n','t','"',':','"','h','i',' ',(byte)0xE8,'"','}','\n'});ChatEngine bytes=new ChatEngine();var scanned=bytes.scan(root,()->false,u->{});check(scanned.skipped()==0&&bytes.requests.values().stream().anyMatch(q->q.text().startsWith("hi")),"Invalid byte does not lose a chat");
             chats.restoreSessions(taken);check(chats.requests.size()==2&&chats.removed.isEmpty(),"Undo restores chat");
         }finally{try(var paths=Files.walk(gone)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.delete(path);}}
         List<Path> blocked=List.of(Path.of("/home/me/client"));
@@ -73,11 +75,13 @@ final class FeatureChecks {
         check(Solutions.asksCsvCleanup("Clean this CSV again")&&!Solutions.asksCsvCleanup("Export the results to CSV"),"A mention of CSV is not a cleanup request");
         check(!Solutions.asksDockerHelp("x".repeat(700)+" how docker"),"Long pastes are not requests");
         check(Solutions.redact("key sk-abcdefghijklmnopqrstuv and token=abcdef123").equals("key [redacted] and [redacted]"),"Credentials redacted");
+        check(Json.map(Solutions.parseModel("Here you go: {\"a\":1} done")).containsKey("a"),"Text around JSON tolerated");
         boolean rejected=false;try{Solutions.parseModel("not json");}catch(java.io.IOException expected){rejected=expected.getMessage().contains("valid JSON");}check(rejected,"Invalid model output explained");
     }
     static void patternChecks()throws Exception{
         check(ChatEngine.userText("The following is the Codex agent history added since your last approval").isEmpty(),"Automated approval prompts dropped");
         check(Patterns.mode("why does this fail?")==Patterns.Mode.UNDERSTAND&&Patterns.mode("fix the login crash in auth")==Patterns.Mode.FIX&&Patterns.mode("no, that is wrong")==Patterns.Mode.CORRECT&&Patterns.mode("continue")==Patterns.Mode.STEER,"Interaction modes");
+        check(ChatEngine.userText("The user sent a new message while you were working:\nfix the build\n\nThis is how Claude Code surfaces messages the user sends mid-turn, more text. Address the message above as you continue this turn.").equals("fix the build"),"Mid-turn notice stripped");
         check(ChatEngine.userText("The user sent a new message while you were working: fix the build").equals("fix the build"),"Harness prefix stripped");
         Map<String,ChatEngine.Request> requests=new LinkedHashMap<>();
         String[] docker=new String[12],cv=new String[12],tails={"keeps failing restart","permissions broke again","mount path question","rebuild scratch today"};
@@ -112,7 +116,7 @@ final class FeatureChecks {
             check(run.descriptions.values().stream().allMatch(d->LlmPatterns.AREAS.contains(d.area())),"Unknown areas normalized");
             check(run.result(requests).groups().stream().mapToInt(g->g.sessions.size()).max().orElse(0)<=12,"Chats counted locally");
             int before=calls[0];LlmPatterns again=new LlmPatterns(aiDir);check(again.pending(requests).isEmpty()&&again.hasPatterns(),"AI results persist");
-            again.run(ai,requests,"docker",(stage,d,t,l)->{});check(calls[0]-before==1,"Regrouping is one call: "+(calls[0]-before));
+            again.full=true;again.run(ai,requests,"docker",(stage,d,t,l)->{});check(calls[0]-before==1,"Regrouping is one call: "+(calls[0]-before));
             Map<String,ChatEngine.Request> fewer=new LinkedHashMap<>(requests);fewer.keySet().removeIf(k->requests.get(k).text().contains("docker"));check(again.result(fewer).groups().size()==1,"Removed chats leave patterns");
             again.clear();check(!Files.exists(again.file()),"AI results deletable");
             int[] tries={0};LlmPatterns cut=new LlmPatterns(aiDir);

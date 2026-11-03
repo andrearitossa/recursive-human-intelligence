@@ -34,6 +34,41 @@ final class Workspace extends JPanel {
     volatile Thread workerThread;
     JDialog openTool;
     boolean thinking,flowing;
+    /** True during the weekly background run, which must never open a dialog. */
+    boolean auto;
+    final JCheckBox weekly=new JCheckBox("Every Sunday at 16:00, read new chats and get feedback in the background");
+    /** The latest Sunday 16:00 on this computer's clock at or before the given moment. */
+    static java.time.ZonedDateTime lastSunday(java.time.ZonedDateTime now){
+        var due=now.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.SUNDAY)).toLocalDate().atTime(16,0).atZone(now.getZone());
+        return due.isAfter(now)?due.minusWeeks(1):due;
+    }
+    /** Runs every Sunday at 16:00 unless opted out. A run missed while RHI was closed happens soon after the next launch. */
+    void weeklyCheck(){
+        if(!weekly.isSelected()||host.busy||paused())return;
+        // The first launch only starts the clock, so nothing is sent until the first Sunday.
+        if(host.settings.getProperty("weekly.last")==null){host.settings.setProperty("weekly.last",Long.toString(System.currentTimeMillis()));try{host.saveSettings();}catch(IOException e){Activity.log("Could not save settings");}return;}
+        long last=Long.parseLong(host.settings.getProperty("weekly.last"));
+        if(last>=lastSunday(java.time.ZonedDateTime.now()).toInstant().toEpochMilli())return;
+        Models.Model connection;
+        try{
+            Models.Provider p=(Models.Provider)provider.getSelectedItem();
+            if(secret(p).isBlank()){String saved=KeyStore.load(p.name());if(!saved.isEmpty())sessionKeys.put(p,saved);}
+            connection=connection();
+        }catch(Exception e){connection=null;}
+        if(connection==null){Activity.log("Weekly check skipped: connect a model and allow sending excerpts in Settings");return;}
+        host.settings.setProperty("weekly.last",Long.toString(System.currentTimeMillis()));
+        try{host.saveSettings();}catch(IOException e){Activity.log("Could not save settings");}
+        Models.Model ready=connection;auto=true;flowing=true;Activity.log("Weekly check started");
+        host.scan(()->{
+            if(host.engine.requests.isEmpty()||host.patterns.caughtUp()){auto=false;flowing=false;refresh();Activity.log("Weekly check: nothing new");return;}
+            flowing=true;host.patterns.flow(ready);
+        });
+        if(!host.busy)auto=false;
+    }
+    void weeklyDone(int items){
+        Activity.log("Weekly check: "+items+" new items");auto=false;
+        if(items>0&&notify.isSelected()&&host.tray!=null)host.tray.displayMessage("Your weekly feedback is ready",items+(items==1?" new item from":" new items from")+" your latest chats.",TrayIcon.MessageType.INFO);
+    }
     JScrollPane homeScroll;
     JScrollPane settingsScroll;
     javax.swing.Timer timer;
@@ -55,6 +90,7 @@ final class Workspace extends JPanel {
         });
         buildSettings();
         timer=new javax.swing.Timer(5*60*1000,e->{if(!host.busy&&!paused()&&schedule.isSelected())host.scan(false);});timer.start();
+        javax.swing.Timer week=new javax.swing.Timer(60*1000,e->weeklyCheck());week.setInitialDelay(60*1000);week.start();
     }
     void interrupt(){Thread t=workerThread;if(t!=null)t.interrupt();}
     boolean paused(){return Boolean.parseBoolean(host.settings.getProperty("paused","false"));}
@@ -65,7 +101,7 @@ final class Workspace extends JPanel {
         if(host.trayPause!=null)host.trayPause.setLabel(paused()?"Resume":"Pause");
         refresh();host.status.setText(paused()?"Paused.":"Resumed.");
     }
-    void setBusy(boolean active){if(!active)SwingUtilities.invokeLater(()->{if(!host.busy&&(thinking||flowing)){thinking=false;flowing=false;refresh();}});analyze.setEnabled(!active);test.setEnabled(!active);forget.setEnabled(!active);manage.setEnabled(!active);}
+    void setBusy(boolean active){if(!active)SwingUtilities.invokeLater(()->{if(!host.busy){auto=false;if(host.patterns!=null)host.patterns.passRunEnded();if(thinking||flowing){thinking=false;flowing=false;refresh();}}});analyze.setEnabled(!active);if(host.patterns!=null)host.patterns.passes.more.setEnabled(!active);test.setEnabled(!active);forget.setEnabled(!active);manage.setEnabled(!active);}
 
     /** The single action. With a model it finds problems; without one it offers the built-in tools. */
     void findProblems(){
@@ -78,6 +114,17 @@ final class Workspace extends JPanel {
             if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Add a folder in Chats.");return;}
             if(host.patterns.caughtUp()){flowing=false;refresh();Activity.log("No chats changed: no model call needed");host.status.setText("No new chats. You are all caught up.");return;}
             flowing=true;host.patterns.flow(connection);
+        });
+    }
+    /** One extra pass on demand, even after the agent said it was finished. */
+    void onePass(){
+        if(host.busy)return;
+        if(paused()){host.status.setText("Paused. Resume in Settings.");return;}
+        Models.Model connection=connectOrAsk();if(connection==null)return;
+        flowing=true;refresh();Activity.log("One more pass: checking for new chats");
+        host.scan(()->{
+            if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Add a folder in Chats.");return;}
+            host.patterns.oneMore=true;host.patterns.flow(connection);
         });
     }
     private boolean useLocal;
@@ -117,11 +164,12 @@ final class Workspace extends JPanel {
         for(Solutions.Tool t:store.tools)if(t.archived==archived.isSelected()&&(t.title+" "+t.description+" "+t.topic).toLowerCase(Locale.ROOT).contains(query))shown.add(t);
         Collections.reverse(shown); // Newest first.
         boolean feature=query.isEmpty()&&!archived.isSelected();
-        if((thinking||flowing)&&feature&&!findingsVisible()){JProgressBar bar=new JProgressBar();bar.setIndeterminate(true);bar.setBorderPainted(false);bar.setForeground(Ui.ACCENT);bar.setBackground(Ui.LINE);bar.setPreferredSize(new Dimension(100,4));cards.put(Ui.label("Reading everything you asked…",Ui.serif(20),Ui.INK),30);cards.put(Ui.muted("Your feedback appears here as it is written."),4);cards.put(bar,12);cards.put(Box.createVerticalStrut(24));}
-        if(feature&&host.patterns!=null&&host.patterns.hasFeedback()){cards.put(Ui.section("Feedback"));cards.put(host.patterns.results,8);if(!shown.isEmpty())cards.put(Ui.section("Saved"),26);}
+        boolean passing=host.patterns!=null&&host.patterns.runPass>0;if((thinking||flowing)&&feature&&!findingsVisible()&&!passing){JProgressBar bar=new JProgressBar();bar.setIndeterminate(true);bar.setBorderPainted(false);bar.setForeground(Ui.ACCENT);bar.setBackground(Ui.LINE);bar.setPreferredSize(new Dimension(100,4));cards.put(Ui.label("Reading everything you asked…",Ui.serif(20),Ui.INK),30);cards.put(Ui.muted("Your feedback appears here as it is written."),4);cards.put(bar,12);cards.put(Box.createVerticalStrut(24));}
+        if(feature&&host.patterns!=null&&host.patterns.hasFeedback()){cards.put(Ui.section("Feedback"));host.patterns.passes.update();cards.put(host.patterns.passes,8);cards.put(host.patterns.results,4);if(!shown.isEmpty())cards.put(Ui.section("Saved"),26);}
+        else if(feature&&passing){host.patterns.passes.update();cards.put(Ui.section("Feedback"));cards.put(host.patterns.passes,8);}
         for(int i=0;i<shown.size();i++)cards.put(card(shown.get(i),feature&&i==0&&isNew(shown.get(i))),i==0?8:12);
         boolean findings=feature&&host.patterns!=null&&host.patterns.hasFeedback();
-        if(shown.isEmpty()&&!findings&&!thinking&&!flowing)cards.put(emptyState(query));
+        if(shown.isEmpty()&&!findings&&!thinking&&!flowing&&!passing)cards.put(emptyState(query));
         // The empty state has its own button; two identical ones would compete.
         analyze.setVisible(!(shown.isEmpty()&&!findings&&!thinking&&!flowing&&query.isEmpty()&&!archived.isSelected()));
         cards.end();cards.revalidate();cards.repaint();
@@ -315,14 +363,15 @@ final class Workspace extends JPanel {
         JLabel excludeLabel=new JLabel("Skip these project folders, one per line");excludeLabel.setBorder(new EmptyBorder(12,0,5,0));form.put(excludeLabel);
         excluded.setMargin(new Insets(6,8,6,8));JScrollPane excludedScroll=new JScrollPane(excluded);excludedScroll.setBorder(new LineBorder(Ui.LINE));form.put(excludedScroll);
         form.put(Ui.row(manage),10);
-        form.put(Ui.section("Background"),26);form.put(check(schedule),6);form.put(check(notify),2);form.put(Ui.row(pause),8);
+        form.put(Ui.section("Background"),26);form.put(check(weekly),6);form.put(check(schedule),2);form.put(check(notify),2);form.put(Ui.row(pause),8);
         form.put(Ui.section("Your data"),26);form.put(Ui.row(forget),8);form.end();
         pause.addActionListener(e->togglePause());
         remember.setSelected(flag("rememberKey","true"));remember.addActionListener(e->autosave());
         forgetKey.addActionListener(e->{Models.Provider p=(Models.Provider)provider.getSelectedItem();sessionKeys.remove(p);stored.remove(p);key.setText("");new Thread(()->KeyStore.delete(p.name())).start();Activity.log("Saved key removed for "+p);host.status.setText("Saved key removed.");updateKeyHint();});
         Models.Provider startup=shownProvider;
         new Thread(()->{String saved=KeyStore.load(startup.name());if(!saved.isEmpty())SwingUtilities.invokeLater(()->{stored.put(startup,saved);if(sessionKeys.getOrDefault(startup,"").isBlank())sessionKeys.put(startup,saved);if(shownProvider==startup&&key.getPassword().length==0)key.setText(saved);updateKeyHint();Activity.log("Loaded your saved key for "+startup);});}).start();
-        for(JCheckBox box:List.of(consent,schedule,notify,codex,claude,pi,cross))box.addActionListener(e->autosave());
+        weekly.setSelected(flag("weekly","true"));
+        for(JCheckBox box:List.of(consent,weekly,schedule,notify,codex,claude,pi,cross))box.addActionListener(e->autosave());
         java.awt.event.FocusAdapter onLeave=new java.awt.event.FocusAdapter(){@Override public void focusLost(java.awt.event.FocusEvent e){autosave();}};
         for(JComponent field:List.of(endpoint,model,key,excluded))field.addFocusListener(onLeave);
         test.addActionListener(e->{
@@ -355,7 +404,7 @@ final class Workspace extends JPanel {
         host.settings.setProperty("rememberKey",Boolean.toString(remember.isSelected()));
         if(remember.isSelected()&&!typed.isBlank()&&!typed.equals(stored.get(p))){stored.put(p,typed);new Thread(()->Activity.log(KeyStore.save(p.name(),typed)?"Key encrypted by "+KeyStore.name():"Could not reach "+KeyStore.name()+": the key stays in memory only")).start();}
         host.settings.setProperty("provider",p.name());host.settings.setProperty("endpoint."+p.name(),endpoint.getText().strip());host.settings.setProperty("model."+p.name(),model.getText().strip());
-        host.settings.setProperty("consent",Boolean.toString(consent.isSelected()));host.settings.setProperty("schedule",Boolean.toString(schedule.isSelected()));host.settings.setProperty("notifications",Boolean.toString(notify.isSelected()));host.settings.setProperty("cross",Boolean.toString(cross.isSelected()));
+        host.settings.setProperty("consent",Boolean.toString(consent.isSelected()));host.settings.setProperty("schedule",Boolean.toString(schedule.isSelected()));host.settings.setProperty("weekly",Boolean.toString(weekly.isSelected()));host.settings.setProperty("notifications",Boolean.toString(notify.isSelected()));host.settings.setProperty("cross",Boolean.toString(cross.isSelected()));
         for(String tool:List.of("Codex","Claude","Pi"))host.settings.setProperty("source."+tool,Boolean.toString(enabled(tool)));
         host.saveSettings();
     }

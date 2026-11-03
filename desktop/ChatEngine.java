@@ -21,6 +21,12 @@ final class ChatEngine {
         removed.addAll(sessions);return taken;
     }
     void restoreSessions(Map<String,Request> taken){for(Request r:taken.values())removed.remove(r.session());requests.putAll(taken);}
+    /** Adding a folder again is the way back: its removed chats return on the next scan. */
+    final Set<Path> readding=new HashSet<>();
+    void readd(Path folder){Path f=folder.toAbsolutePath().normalize();readding.add(f);stamps.keySet().removeIf(p->p.startsWith(f));}
+    private boolean put(Request r){synchronized(requests){return requests.putIfAbsent(id(r),r)==null;}}
+    /** A safe copy for the screen while an import is adding to the real map. */
+    List<Request> snapshot(){synchronized(requests){return new ArrayList<>(requests.values());}}
     void saveRemoved(Path file)throws IOException{
         Files.createDirectories(file.getParent());Path temp=Files.createTempFile(file.getParent(),"removed-",".tmp");
         Files.write(temp,removed);Files.move(temp,file,StandardCopyOption.REPLACE_EXISTING);
@@ -29,6 +35,7 @@ final class ChatEngine {
         removed.clear();if(Files.exists(file))removed.addAll(Files.readAllLines(file));
         requests.values().removeIf(r->removed.contains(r.session()));
     }
+    private static final Set<String> JUNK=Set.of("node_modules",".cache",".git",".venv","venv","__pycache__",".uv-cache",".npm",".cargo",".rustup");
     record Stamp(long modified,long size,boolean chat) {}
     final Map<Path,Stamp> stamps=new HashMap<>();
     /** Transcripts are streamed line by line, so long sessions, usually the most useful, stay importable. */
@@ -42,6 +49,7 @@ final class ChatEngine {
     static String userText(String raw){
         String text=PLACEHOLDER.matcher(PASTED.matcher(raw).replaceAll("")).replaceAll("");
         text=text.replaceFirst("^\\s*The user sent a new message while you were working:\\s*","");
+        text=text.replaceAll("(?s)This is how Claude Code surfaces messages the user sends mid-turn.*?Address the message above as you continue this turn\\.","");
         String previous;
         do{
             previous=text;text=text.strip();
@@ -101,9 +109,10 @@ final class ChatEngine {
         for(Root root:unique(roots)){
             if(stopped.getAsBoolean())break;
             progress.accept(new Update("Checking "+root.tool()+" · "+root.path(),totals[0],totals[1],totals[2],new ArrayList<>(folders.values())));
-            if(!Files.exists(root.path())){folders.put(root.path().toString(),new Folder(root.tool(),root.path()+" (not found)",0,0,0));continue;}
+            if(!Files.exists(root.path())){folders.put(root.path().toString(),new Folder(root.tool(),root.path()+" (not found)",0,0,0));Activity.log(root.tool()+": not found at "+root.path());continue;}
+            int[] before=totals.clone();
             Files.walkFileTree(root.path(),EnumSet.noneOf(FileVisitOption.class),64,new SimpleFileVisitor<Path>(){
-                public FileVisitResult preVisitDirectory(Path p,BasicFileAttributes attrs){if(p.getFileName()!=null&&p.getFileName().toString().equals("subagents")&&(root.tool().equals("Claude")||p.toString().contains(".claude")))return FileVisitResult.SKIP_SUBTREE;if(p.getFileName()!=null&&isExcluded(p.toString(),p.getFileName().toString(),excluded))return FileVisitResult.SKIP_SUBTREE;publish.accept("Checking "+p);return stopped.getAsBoolean()?FileVisitResult.TERMINATE:FileVisitResult.CONTINUE;}
+                public FileVisitResult preVisitDirectory(Path p,BasicFileAttributes attrs){if(p.getFileName()!=null&&JUNK.contains(p.getFileName().toString()))return FileVisitResult.SKIP_SUBTREE;if(p.getFileName()!=null&&p.getFileName().toString().equals("subagents")&&(root.tool().equals("Claude")||p.toString().contains(".claude")))return FileVisitResult.SKIP_SUBTREE;if(p.getFileName()!=null&&isExcluded(p.toString(),p.getFileName().toString(),excluded))return FileVisitResult.SKIP_SUBTREE;publish.accept("Checking "+p);return stopped.getAsBoolean()?FileVisitResult.TERMINATE:FileVisitResult.CONTINUE;}
                 public FileVisitResult visitFile(Path file,BasicFileAttributes attrs){
                     if(stopped.getAsBoolean())return FileVisitResult.TERMINATE;
                     if(isExcluded(file.toString(),null,excluded))return FileVisitResult.CONTINUE;
@@ -119,20 +128,25 @@ final class ChatEngine {
                     try{
                         if(attrs.size()>MAX_FILE)throw new IOException("File is too large");
                         List<Request> pending=new ArrayList<>();boolean discard=false;
-                        try(BufferedReader reader=Files.newBufferedReader(file,StandardCharsets.UTF_8)){
+                        // A stray invalid byte must not lose a whole chat, so it is replaced rather than rejected.
+                        try(BufferedReader reader=new BufferedReader(new InputStreamReader(Files.newInputStream(file),StandardCharsets.UTF_8))){
                             String line;while((line=reader.readLine())!=null){if(stopped.getAsBoolean())return FileVisitResult.TERMINATE;if(!line.contains("\"user\"")&&!line.contains("\"cwd\""))continue;try{if(!pending.isEmpty()||!discard){Map<?,?> head=Json.map(Json.parse(line));Map<?,?> payload=Json.map(head.get("payload"));String cwd=Json.text(head.containsKey("cwd")?head.get("cwd"):payload.get("cwd"));if(!cwd.isEmpty()&&isExcluded(cwd,null,excluded))discard=true;if(Json.text(head.get("type")).equals("session_meta")&&payload.get("parent_thread_id")!=null)discard=true;}if(discard)break;Request r=extract(line,file.toAbsolutePath().normalize().toString());if(r!=null){chat=true;pending.add(r);}}catch(IllegalArgumentException ignored){}}
                         }
                         if(discard){stamps.remove(canonical);return FileVisitResult.CONTINUE;}
-                        for(Request r:pending)if(!removed.contains(r.session())&&requests.putIfAbsent(id(r),r)==null)added++;
+                        if(readding.stream().anyMatch(canonical::startsWith))for(Request r:pending)removed.remove(r.session());
+                        for(Request r:pending)if(!removed.contains(r.session())&&put(r))added++;
                         stamps.put(canonical,new Stamp(attrs.lastModifiedTime().toMillis(),attrs.size(),chat));
-                    }catch(IOException e){skipped=1;chat=false;}
+                    }catch(IOException e){skipped=1;chat=false;Activity.log("Cannot read "+file+": "+e.getClass().getSimpleName());}
                     totals[0]+=chat?1:0;totals[1]+=added;totals[2]+=skipped;
                     folders.put(key,new Folder(root.tool(),folder,old.chats()+(chat?1:0),old.added()+added,old.skipped()+skipped));
                     publish.accept("Reading "+file);return FileVisitResult.CONTINUE;
                 }
-                public FileVisitResult visitFileFailed(Path file,IOException error){totals[2]++;folders.put(file.toString(),new Folder(root.tool(),file+" (unreadable)",0,0,1));publish.accept("Cannot read "+file);return stopped.getAsBoolean()?FileVisitResult.TERMINATE:FileVisitResult.CONTINUE;}
+                public FileVisitResult visitFileFailed(Path file,IOException error){if(!file.toString().toLowerCase(Locale.ROOT).endsWith(".jsonl"))return FileVisitResult.CONTINUE;totals[2]++;Activity.log("Cannot open "+file+": "+error.getClass().getSimpleName());folders.put(file.toString(),new Folder(root.tool(),file+" (unreadable)",0,0,1));publish.accept("Cannot read "+file);return stopped.getAsBoolean()?FileVisitResult.TERMINATE:FileVisitResult.CONTINUE;}
             });
+            int found=totals[0]-before[0],fresh=totals[1]-before[1],bad=totals[2]-before[2];
+            Activity.log(root.tool()+": "+(found==0?"no chats":found+(found==1?" chat, ":" chats, ")+fresh+(fresh==1?" new request":" new requests"))+(bad>0?", "+bad+" unreadable":"")+" at "+root.path());
         }
+        if(!stopped.getAsBoolean())readding.clear();
         Update result=new Update(stopped.getAsBoolean()?"Stopped · completed files retained":"Import complete",totals[0],totals[1],totals[2],new ArrayList<>(folders.values()));progress.accept(result);return result;
     }
     void loadIndex(Path file)throws IOException{
