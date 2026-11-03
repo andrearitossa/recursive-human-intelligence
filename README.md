@@ -123,6 +123,10 @@ Requires JDK 17+. `desktop/start.bat` or `desktop/start.sh` compiles, runs check
 
 </details>
 
+## Contributing
+
+All you need is JDK 17. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 [Apache License 2.0](LICENSE). Free to use, change, and sell. Copies and derived works must carry the credit to **Andrea Ritossa** in [NOTICE](NOTICE). If this project inspires your own work, please credit it too.
