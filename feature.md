@@ -9,7 +9,8 @@ The model interface supports **OpenAI, Claude, and OpenRouter**. Provider, endpo
 Implemented and exercised on Windows with JDK 25:
 
 - Native import with live per-folder counts, Windows/WSL discovery, cancellation, persisted history, deduplication, and an incremental file index.
-- Home/library, Chats (per-chat list with remove and undo), and self-saving Settings tabs; searchable active and archived solutions.
+- Dashboard first: every Claude Code, Codex, ChatGPT app, and Pi session grouped by project, with what needs the user on top, one agent-colored timeline per project, pinned projects, filters by app and time, a session sidebar with Markdown, and links back into each app, terminal, or VS Code. Live status comes from running processes on Windows and WSL; the first read is cached in `~/.loop/agents-index.json`.
+- Feedback/library, Chats (the same sessions the Dashboard lists, with last interacted, remove, and undo), and self-saving Settings, including one editable list of chat locations; searchable active and archived solutions.
 - Filtering of harness-injected text and subagent sessions, so only what the user typed counts as evidence.
 - Drag-and-drop CSV cleaner for comma, semicolon, and tab files in UTF-8 or ANSI.
 - Patterns screen: local interaction and topic clustering shown as a bubble map, then model-written findings with evidence and suggestions.
@@ -18,7 +19,7 @@ Implemented and exercised on Windows with JDK 25:
 - Curated tools without a model; model-backed references, interactive lessons, and deterministic text tools.
 - Sandboxed standalone HTML artifacts rendered from validated data, with no model-supplied executable code or credential access.
 - Evidence details, Useful and Prefer delegating feedback, model-backed improvement, retained versions, and restore as a new version.
-- Pause/resume, source toggles, project-folder exclusions for future imports, and added-folder management.
+- Pause/resume, editable chat locations with restore to the standard paths, and project-folder exclusions for future imports.
 - Tray Open/Pause/Quit, close to tray where supported, and optional desktop notifications.
 - Weekly automatic suggestion cooldown, archived-topic suppression, similar-title filtering, and separation of generated solutions from source transcripts.
 - Delete imported history, index, solution metadata, feedback, and generated artifact files. Original transcripts stay untouched.
@@ -60,9 +61,10 @@ Harness adapters → Local history → Opportunity analysis
 4. The user opens and uses the solution, finds it later in the library, and can give feedback or request an improvement.
 5. RHI uses feedback and outcomes to improve, retire, or stop suggesting solutions.
 
-The app has three main screens:
+The app has four main screens:
 
-- **Home:** a featured new solution and saved tools. With no solutions yet, show: “Keep working. RHI will look for ways to make it easier.”
+- **Dashboard:** every agent session by project, with status, timeline, and quick links. It is the first screen.
+- **Feedback:** a featured new solution and saved tools. With no solutions yet, show: “Keep working. RHI will look for ways to make it easier.”
 - **Tool:** the solution, a short explanation of why it was created, and **Improve**, **Useful**, and **Archive** actions.
 - **Settings:** connected harnesses, included projects, model connection, pause collection, and delete history.
 

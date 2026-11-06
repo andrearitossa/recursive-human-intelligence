@@ -90,7 +90,7 @@ final class PatternsPage extends JPanel {
     }
     List<Patterns.Group> scoped(){return selected.isEmpty()?visible():new ArrayList<>(selected);}
     void setBusy(boolean active){analyze.setEnabled(!active);focus.setEnabled(!active);ask.setEnabled(!active&&result!=null&&!scoped().isEmpty());if(!active&&!running)refresh();}
-    /** The one "Find the problems" action. Works from any screen, and answers appear on Home. */
+    /** The one "Find the problems" action. Works from any screen, and answers appear on Feedback. */
     void ask(){
         Models.Model connection=host.workspace.connectOrAsk();if(connection!=null)ask(connection);
     }
@@ -106,7 +106,7 @@ final class PatternsPage extends JPanel {
         boolean ready=result!=null&&analyzedSignature==host.engine.requests.keySet().hashCode();
         List<Patterns.Group> chosen=ready?scoped():null;String wanted=focus.getText().strip();List<Insights.Finding> told=new ArrayList<>(feedback);boolean selected0=selected.isEmpty();
         Map<String,ChatEngine.Request> copy=new LinkedHashMap<>(host.engine.requests);
-        host.select("Home");host.workspace.thinking=true;host.workspace.refresh();
+        host.select("Feedback");host.workspace.thinking=true;host.workspace.refresh();
         int[] next={0};long runStart=System.currentTimeMillis();boolean deep=selected0;String signature=signature();boolean extra=oneMore&&deep;oneMore=false;int base=extra?passesDone():0,rounds=!deep||extra?1:Insights.ROUNDS;if(deep){runNew=0;runLimit=base+rounds;runExtra=extra;}
         host.workspace.run("Writing your feedback…",!host.workspace.auto,()->{
             List<Patterns.Group> groups=chosen!=null?chosen:(llm.hasPatterns()?llm.result(copy):Patterns.analyze(copy)).groups();

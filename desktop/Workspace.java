@@ -8,7 +8,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.List;
 
-/** Home library, tool details, provider-neutral analysis, feedback, and settings. UI work stays on the EDT. */
+/** Feedback library, tool details, provider-neutral analysis, feedback, and settings. UI work stays on the EDT. */
 final class Workspace extends JPanel {
     final Loop host;
     final Solutions store;
@@ -23,8 +23,8 @@ final class Workspace extends JPanel {
     final JPasswordField key=new JPasswordField();
     final JLabel keyHint=Ui.muted("");
     final JTextArea excluded=new JTextArea(3,40);
-    final JCheckBox consent=new JCheckBox("Allow selected chat excerpts to be sent to this provider"),schedule=new JCheckBox("Check for new chats every 5 minutes while RHI runs"),notify=new JCheckBox("Desktop notifications"),codex=new JCheckBox("Codex"),claude=new JCheckBox("Claude"),pi=new JCheckBox("Pi"),cross=new JCheckBox("Also look in other Windows / WSL profiles");
-    final JButton test=Ui.button("Test connection"),manage=Ui.button("Added folders"),forget=Ui.button("Delete history");
+    final JCheckBox consent=new JCheckBox("Allow selected chat excerpts to be sent to this provider"),schedule=new JCheckBox("Check for new chats every 5 minutes while RHI runs"),notify=new JCheckBox("Desktop notifications");
+    final JButton test=Ui.button("Test connection"),forget=Ui.button("Delete history");
     final Map<Models.Provider,String> sessionKeys=new EnumMap<>(Models.Provider.class);
     final JCheckBox remember=new JCheckBox("Keep my key safe on this computer",true);
     final JButton forgetKey=Ui.button("Forget saved key");
@@ -101,7 +101,7 @@ final class Workspace extends JPanel {
         if(host.trayPause!=null)host.trayPause.setLabel(paused()?"Resume":"Pause");
         refresh();host.status.setText(paused()?"Paused.":"Resumed.");
     }
-    void setBusy(boolean active){if(!active)SwingUtilities.invokeLater(()->{if(!host.busy){auto=false;if(host.patterns!=null)host.patterns.passRunEnded();if(thinking||flowing){thinking=false;flowing=false;refresh();}}});analyze.setEnabled(!active);if(host.patterns!=null)host.patterns.passes.more.setEnabled(!active);test.setEnabled(!active);forget.setEnabled(!active);manage.setEnabled(!active);}
+    void setBusy(boolean active){if(!active)SwingUtilities.invokeLater(()->{if(!host.busy){auto=false;if(host.patterns!=null)host.patterns.passRunEnded();if(thinking||flowing){thinking=false;flowing=false;refresh();}}});analyze.setEnabled(!active);if(host.patterns!=null)host.patterns.passes.more.setEnabled(!active);test.setEnabled(!active);forget.setEnabled(!active);}
 
     /** The single action. With a model it finds problems; without one it offers the built-in tools. */
     void findProblems(){
@@ -111,7 +111,7 @@ final class Workspace extends JPanel {
         if(connection==null){if(useLocal){useLocal=false;flowing=true;host.scan(()->analyze(true));}return;}
         flowing=true;refresh();Activity.log("Get feedback: checking for new chats");
         host.scan(()->{
-            if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Add a folder in Chats.");return;}
+            if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Check Settings → Chat locations.");return;}
             if(host.patterns.caughtUp()){flowing=false;refresh();Activity.log("No chats changed: no model call needed");host.status.setText("No new chats. You are all caught up.");return;}
             flowing=true;host.patterns.flow(connection);
         });
@@ -123,7 +123,7 @@ final class Workspace extends JPanel {
         Models.Model connection=connectOrAsk();if(connection==null)return;
         flowing=true;refresh();Activity.log("One more pass: checking for new chats");
         host.scan(()->{
-            if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Add a folder in Chats.");return;}
+            if(host.engine.requests.isEmpty()){flowing=false;refresh();host.status.setText("No chats found. Check Settings → Chat locations.");return;}
             host.patterns.oneMore=true;host.patterns.flow(connection);
         });
     }
@@ -346,23 +346,21 @@ final class Workspace extends JPanel {
         Set<String> sessions=new HashSet<>();for(String id:tool.evidence){var r=host.engine.requests.get(id);if(r!=null)sessions.add(r.session());}
         host.tray.displayMessage(tool.title+" is ready","This came up in "+sessions.size()+" separate sessions, so RHI made something for it.",TrayIcon.MessageType.INFO);
     }
-    boolean enabled(String tool){return switch(tool){case "Codex"->codex.isSelected();case "Claude"->claude.isSelected();case "Pi"->pi.isSelected();default->true;};}
 
     // ---- Settings ----
     private boolean flag(String name,String fallback){return Boolean.parseBoolean(host.settings.getProperty(name,fallback));}
     void buildSettings(){
         Models.Provider selected;try{selected=Models.Provider.valueOf(host.settings.getProperty("provider","OPENAI"));}catch(Exception e){selected=Models.Provider.OPENAI;}
         provider.setSelectedItem(selected);loadProvider(selected);
-        consent.setSelected(flag("consent","false"));schedule.setSelected(flag("schedule","false"));notify.setSelected(flag("notifications","true"));codex.setSelected(flag("source.Codex","true"));claude.setSelected(flag("source.Claude","true"));pi.setSelected(flag("source.Pi","true"));cross.setSelected(flag("cross","true"));
+        consent.setSelected(flag("consent","false"));schedule.setSelected(flag("schedule","false"));notify.setSelected(flag("notifications","true"));
         excluded.setText(host.settings.getProperty("excluded",""));
         Ui.Stack form=new Ui.Stack();form.setBorder(new EmptyBorder(0,0,16,14));
         form.put(Ui.section("Model"));
         field(form,"Provider",provider);field(form,"Model ID",model);field(form,"API key",key);form.put(keyHint,4);form.put(check(remember),4);field(form,"Endpoint",endpoint);
         form.put(check(consent),10);form.put(Ui.row(test,forgetKey),10);
-        form.put(Ui.section("Sources"),26);form.put(Ui.row(check(codex),check(claude),check(pi)),6);form.put(check(cross),4);
+        form.put(Ui.section("Chat locations"),26);form.put(Ui.muted("Where your chats are saved. Dashboard, Chats, and feedback all read this list."),6);form.put(host.pathsPanel(),4);
         JLabel excludeLabel=new JLabel("Skip these project folders, one per line");excludeLabel.setBorder(new EmptyBorder(12,0,5,0));form.put(excludeLabel);
         excluded.setMargin(new Insets(6,8,6,8));JScrollPane excludedScroll=new JScrollPane(excluded);excludedScroll.setBorder(new LineBorder(Ui.LINE));form.put(excludedScroll);
-        form.put(Ui.row(manage),10);
         form.put(Ui.section("Background"),26);form.put(check(weekly),6);form.put(check(schedule),2);form.put(check(notify),2);form.put(Ui.row(pause),8);
         form.put(Ui.section("Your data"),26);form.put(Ui.row(forget),8);form.end();
         pause.addActionListener(e->togglePause());
@@ -371,7 +369,7 @@ final class Workspace extends JPanel {
         Models.Provider startup=shownProvider;
         new Thread(()->{String saved=KeyStore.load(startup.name());if(!saved.isEmpty())SwingUtilities.invokeLater(()->{stored.put(startup,saved);if(sessionKeys.getOrDefault(startup,"").isBlank())sessionKeys.put(startup,saved);if(shownProvider==startup&&key.getPassword().length==0)key.setText(saved);updateKeyHint();Activity.log("Loaded your saved key for "+startup);});}).start();
         weekly.setSelected(flag("weekly","true"));
-        for(JCheckBox box:List.of(consent,weekly,schedule,notify,codex,claude,pi,cross))box.addActionListener(e->autosave());
+        for(JCheckBox box:List.of(consent,weekly,schedule,notify))box.addActionListener(e->autosave());
         java.awt.event.FocusAdapter onLeave=new java.awt.event.FocusAdapter(){@Override public void focusLost(java.awt.event.FocusEvent e){autosave();}};
         for(JComponent field:List.of(endpoint,model,key,excluded))field.addFocusListener(onLeave);
         test.addActionListener(e->{
@@ -381,7 +379,7 @@ final class Workspace extends JPanel {
                 run("Testing "+p+"…",true,()->client.complete("Reply with OK only.","Connection test. No chat history is included."),result->host.status.setText("Connection works: "+p+" answered."));
             }catch(Exception error){host.error(error);}
         });
-        manage.addActionListener(e->manageFolders());forget.addActionListener(e->host.deleteHistory());
+        forget.addActionListener(e->host.deleteHistory());
         provider.addActionListener(e->{
             // Keep a typed key when switching, so comparing providers does not lose it.
             if(shownProvider!=null)sessionKeys.put(shownProvider,new String(key.getPassword()));
@@ -404,8 +402,8 @@ final class Workspace extends JPanel {
         host.settings.setProperty("rememberKey",Boolean.toString(remember.isSelected()));
         if(remember.isSelected()&&!typed.isBlank()&&!typed.equals(stored.get(p))){stored.put(p,typed);new Thread(()->Activity.log(KeyStore.save(p.name(),typed)?"Key encrypted by "+KeyStore.name():"Could not reach "+KeyStore.name()+": the key stays in memory only")).start();}
         host.settings.setProperty("provider",p.name());host.settings.setProperty("endpoint."+p.name(),endpoint.getText().strip());host.settings.setProperty("model."+p.name(),model.getText().strip());
-        host.settings.setProperty("consent",Boolean.toString(consent.isSelected()));host.settings.setProperty("schedule",Boolean.toString(schedule.isSelected()));host.settings.setProperty("weekly",Boolean.toString(weekly.isSelected()));host.settings.setProperty("notifications",Boolean.toString(notify.isSelected()));host.settings.setProperty("cross",Boolean.toString(cross.isSelected()));
-        for(String tool:List.of("Codex","Claude","Pi"))host.settings.setProperty("source."+tool,Boolean.toString(enabled(tool)));
+        host.settings.setProperty("consent",Boolean.toString(consent.isSelected()));host.settings.setProperty("schedule",Boolean.toString(schedule.isSelected()));host.settings.setProperty("weekly",Boolean.toString(weekly.isSelected()));host.settings.setProperty("notifications",Boolean.toString(notify.isSelected()));
+
         host.saveSettings();
     }
     List<Path> excludedPaths(){
@@ -417,13 +415,5 @@ final class Workspace extends JPanel {
             out.add(Path.of(path));
         }
         return out;
-    }
-    void manageFolders(){
-        if(host.extra.isEmpty()){JOptionPane.showMessageDialog(host.frame,"No folders added yet. Add them from Chats.","Added folders",JOptionPane.INFORMATION_MESSAGE);return;}
-        DefaultListModel<String> items=new DefaultListModel<>();for(var root:host.extra)items.addElement(root.tool()+"  ·  "+root.path());
-        JList<String> list=new JList<>(items);JScrollPane scroll=new JScrollPane(list);scroll.setPreferredSize(new Dimension(650,260));
-        if(JOptionPane.showConfirmDialog(host.frame,scroll,"Select folders to remove",JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;
-        int[] indexes=list.getSelectedIndices();for(int i=indexes.length-1;i>=0;i--)host.extra.remove(indexes[i]);
-        try{host.saveRoots();host.status.setText(indexes.length+" folders removed.");}catch(Exception e){host.error(e);}
     }
 }

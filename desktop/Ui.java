@@ -10,14 +10,46 @@ public final class Ui {
     private static final Font BASE=loadFont();
     private static Font loadFont(){
         try(java.io.InputStream in=Ui.class.getResourceAsStream("/fonts/EBGaramond.ttf")){
-            java.io.InputStream use=in!=null?in:new java.io.FileInputStream("fonts/EBGaramond.ttf");
+            java.io.InputStream use=in!=null?in:new java.io.FileInputStream(fontFile());
             Font f=Font.createFont(Font.TRUETYPE_FONT,use);GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(f);return f;
         }catch(Exception e){return new Font(Font.SERIF,Font.PLAIN,12);}
+    }
+    /** Found beside the program, wherever it was launched from; otherwise Java silently falls back to Times. */
+    private static java.io.File fontFile()throws Exception{
+        java.io.File build=java.nio.file.Path.of(Ui.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toFile();
+        for(java.io.File dir=build;dir!=null;dir=dir.getParentFile()){java.io.File f=new java.io.File(dir,"fonts/EBGaramond.ttf");if(f.isFile())return f;}
+        return new java.io.File("fonts/EBGaramond.ttf");
     }
     // Garamond runs small, so text sizes are stepped up to stay as readable as before.
     static Font sans(int style,int size){return BASE.deriveFont(style,size+2f);}
     static Font serif(int size){return BASE.deriveFont(Font.PLAIN,(float)size+2);}
     static Font heading(int size){return BASE.deriveFont(Font.BOLD,(float)size).deriveFont(java.util.Map.of(java.awt.font.TextAttribute.TRACKING,-0.01f));}
+    static final int RADIUS=10;
+    /** Fills a button's own rounded shape, so no square corner shows behind its outline. */
+    private static final class RoundButton extends javax.swing.plaf.basic.BasicButtonUI {
+        @Override public void paint(Graphics graphics,JComponent c){
+            Graphics2D g=(Graphics2D)graphics.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(c.getBackground());g.fill(new java.awt.geom.RoundRectangle2D.Float(0,0,c.getWidth(),c.getHeight(),RADIUS,RADIUS));g.dispose();
+            super.paint(graphics,c);
+        }
+        @Override protected void paintButtonPressed(Graphics g,AbstractButton b){}
+        /** A disabled button keeps its own text color, faded, so a dark-filled button stays readable. */
+        @Override protected void paintText(Graphics g,AbstractButton b,Rectangle r,String text){
+            if(b.isEnabled()){super.paintText(g,b,r,text);return;}
+            Color f=b.getForeground();g.setColor(new Color(f.getRed(),f.getGreen(),f.getBlue(),150));FontMetrics m=g.getFontMetrics();
+            javax.swing.plaf.basic.BasicGraphicsUtils.drawStringUnderlineCharAt(b,(Graphics2D)g,text,-1,r.x+getTextShiftOffset(),r.y+m.getAscent()+getTextShiftOffset());
+        }
+    }
+    /** A rounded outline with smooth corners; Swing's own LineBorder draws them jagged. */
+    static Border round(Color color,int thickness){
+        return new javax.swing.border.AbstractBorder(){
+            @Override public void paintBorder(Component c,Graphics graphics,int x,int y,int w,int h){
+                Graphics2D g=(Graphics2D)graphics.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,RenderingHints.VALUE_STROKE_PURE);
+                g.setColor(color);g.setStroke(new BasicStroke(thickness));float inset=thickness/2f;
+                g.draw(new java.awt.geom.RoundRectangle2D.Float(x+inset,y+inset,w-thickness,h-thickness,RADIUS,RADIUS));g.dispose();
+            }
+            @Override public Insets getBorderInsets(Component c,Insets in){in.set(thickness,thickness,thickness,thickness);return in;}
+        };
+    }
     static void install(){
         System.setProperty("swing.boldMetal","false");
         Font base=sans(Font.PLAIN,14);
@@ -28,11 +60,11 @@ public final class Ui {
         UIManager.put("Panel.background",BG);UIManager.put("OptionPane.background",BG);UIManager.put("Button.focus",new Color(0,0,0,0));UIManager.put("CheckBox.focus",new Color(0,0,0,0));
     }
     static JButton button(String text){
-        JButton b=new JButton(text);b.setFocusPainted(false);b.setBackground(Color.WHITE);b.setForeground(INK);
-        b.setBorder(new CompoundBorder(new LineBorder(LINE,1,true),new EmptyBorder(8,14,8,14)));
+        JButton b=new JButton(text);b.setUI(new RoundButton());b.setOpaque(false);b.setContentAreaFilled(false);b.setFocusPainted(false);b.setBackground(Color.WHITE);b.setForeground(INK);
+        b.setBorder(new CompoundBorder(Ui.round(LINE,1),new EmptyBorder(8,14,8,14)));
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));hover(b,Color.WHITE,SOFT);return b;
     }
-    static JButton primary(String text){JButton b=button(text);b.setBackground(ACCENT);b.setForeground(Color.WHITE);b.setBorder(new CompoundBorder(new LineBorder(ACCENT,1,true),new EmptyBorder(8,14,8,14)));hover(b,ACCENT,ACCENT_HOVER);return b;}
+    static JButton primary(String text){JButton b=button(text);b.setBackground(ACCENT);b.setForeground(Color.WHITE);b.setBorder(new CompoundBorder(Ui.round(ACCENT,1),new EmptyBorder(8,14,8,14)));hover(b,ACCENT,ACCENT_HOVER);return b;}
     static void hover(JButton b,Color normal,Color over){
         for(var old:b.getMouseListeners())if(old instanceof Hover)b.removeMouseListener(old);
         b.addMouseListener(new Hover(b,normal,over));
@@ -85,9 +117,13 @@ public final class Ui {
     static JTextArea prose(String text,Color color){
         JTextArea area=new JTextArea(text);area.setEditable(false);area.setLineWrap(true);area.setWrapStyleWord(true);area.setOpaque(false);area.setForeground(color);area.setFont(sans(Font.PLAIN,14));area.setBorder(null);area.setFocusable(false);((javax.swing.text.DefaultCaret)area.getCaret()).setUpdatePolicy(javax.swing.text.DefaultCaret.NEVER_UPDATE);return area;
     }
+    static JButton link(String text){JButton b=new JButton(text);b.setBorder(new EmptyBorder(2,0,2,0));b.setContentAreaFilled(false);b.setOpaque(false);b.setFocusPainted(false);b.setForeground(ACCENT);b.setFont(sans(Font.PLAIN,12));b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));return b;}
     static JPanel row(Component... items){JPanel p=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));p.setOpaque(false);for(int i=0;i<items.length;i++){if(i>0)p.add(Box.createHorizontalStrut(8));p.add(items[i]);}return p;}
     static JScrollPane scroll(Component view){JScrollPane s=new JScrollPane(view);s.setBorder(null);s.getViewport().setBackground(BG);s.getVerticalScrollBar().setUnitIncrement(18);s.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);return s;}
-    static Stack card(boolean highlighted){Stack p=new Stack();p.setOpaque(true);p.setBackground(Color.WHITE);p.setBorder(new CompoundBorder(new LineBorder(highlighted?ACCENT:LINE,highlighted?2:1,true),new EmptyBorder(18,22,18,22)));return p;}
+    static Stack card(boolean highlighted){
+        Stack p=new Stack(){@Override protected void paintComponent(Graphics graphics){Graphics2D g=(Graphics2D)graphics.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(Color.WHITE);g.fill(new java.awt.geom.RoundRectangle2D.Float(0,0,getWidth(),getHeight(),RADIUS,RADIUS));g.dispose();}};
+        p.setBorder(new CompoundBorder(round(highlighted?ACCENT:LINE,highlighted?2:1),new EmptyBorder(16,18,16,18)));return p;
+    }
 
     /** A left-aligned vertical stack whose rows fill the width; tracks a scroll pane's width so text wraps. */
     static class Stack extends JPanel implements Scrollable {

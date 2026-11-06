@@ -8,3 +8,4 @@ desktop/build/
 ui-test/shots/
 ui-test/*.log
 desktop/dist/
+desktop/ui-test/shots/

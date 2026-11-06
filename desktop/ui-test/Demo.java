@@ -29,7 +29,7 @@ public class Demo{
  static BufferedImage paint(Window w)throws Exception{BufferedImage[] o=new BufferedImage[1];SwingUtilities.invokeAndWait(()->{Container p=((RootPaneContainer)w).getContentPane();BufferedImage i=new BufferedImage(p.getWidth(),p.getHeight(),1);Graphics2D g=i.createGraphics();p.printAll(g);g.dispose();o[0]=i;});return o[0];}
  static long sq(int x){return (long)x*x;}
  static boolean same(BufferedImage a,BufferedImage b){if(a.getWidth()!=b.getWidth()||a.getHeight()!=b.getHeight())return false;return Arrays.equals(a.getRGB(0,0,a.getWidth(),a.getHeight(),null,0,a.getWidth()),b.getRGB(0,0,b.getWidth(),b.getHeight(),null,0,b.getWidth()));}
- static volatile String caption="";static final int W=800,H=544,BAR=46;
+ static volatile String caption="";static final int W=960,H=640,BAR=46;
  /** Every frame has one size: the app, optional detail window on top, and a caption bar. */
  static void snap(int ms)throws Exception{
   BufferedImage base=paint(l.frame);BufferedImage s=new BufferedImage(W,H+BAR,1);Graphics2D g=s.createGraphics();g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BICUBIC);g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -37,24 +37,29 @@ public class Demo{
   if(source!=l.frame){BufferedImage d=paint(source);g.setColor(new Color(41,60,38,120));g.fillRect(0,0,W,H);int dw=Math.min(W-90,d.getWidth()),dh=d.getHeight()*dw/d.getWidth();dh=Math.min(dh,H-30);int x=(W-dw)/2,y=(H-dh)/2;g.setColor(Ui.BG);g.fillRoundRect(x-1,y-1,dw+2,dh+2,6,6);g.drawImage(d,x,y,dw,dh,null);}
   g.setColor(Ui.ACCENT);g.fillRect(0,H,W,BAR);g.setColor(Color.WHITE);g.setFont(Ui.sans(Font.BOLD,17));g.drawString(caption,(W-g.getFontMetrics().stringWidth(caption))/2,H+30);g.dispose();
   if(!frames.isEmpty()&&same(frames.get(frames.size()-1),s)){delays.set(delays.size()-1,delays.get(delays.size()-1)+ms);return;}frames.add(s);delays.add(ms);}
+ static JTextArea stripe(Container c){for(Component k:c.getComponents()){if(k instanceof JTextArea t&&t.getText().startsWith("Stripe"))return t;if(k instanceof Container b){JTextArea f=stripe(b);if(f!=null)return f;}}return null;}
  static void hold(int ms)throws Exception{long end=System.currentTimeMillis()+ms;while(System.currentTimeMillis()<end){snap(160);Thread.sleep(140);}}
  static void png(String n,Window w,File d)throws Exception{ImageIO.write(paint(w),"png",new File(d,n+".png"));}
  public static void main(String[] a)throws Exception{
   File docs=new File(a[0]);Path home=Path.of(System.getProperty("user.home"));if(!home.toString().contains("loop-demo-home"))throw new IllegalStateException();
-  Random r=new Random(5);int chat=0;for(String[] t:T)for(int c=0;c<14;c++){Path f=home.resolve(".claude/projects/-work/"+(chat++)+".jsonl");Files.createDirectories(f.getParent());StringBuilder b=new StringBuilder();String v=t[2+c%4]+(c>3?" for the "+"abcdefghijklmn".charAt(c)+" page":"");b.append(Json.write(Map.of("type","user","sessionId","s"+chat,"message",Map.of("role","user","content",v)))).append("\n");Files.writeString(f,b.toString());}
-  Path dir=home.resolve(".loop");Files.createDirectories(dir);
+  Random r=new Random(5);int chat=0;for(String[] t:T)for(int c=0;c<14;c++){Path f=home.resolve(".claude/projects/-work/"+(chat++)+".jsonl");Files.createDirectories(f.getParent());StringBuilder b=new StringBuilder();String v=t[2+c%4]+(c>3?" for the "+"abcdefghijklmn".charAt(c)+" page":"");b.append(Json.write(Map.of("type","user","sessionId","s"+chat,"timestamp",DashDemo.at(800+chat*3),"cwd","/home/maya/side-projects","message",Map.of("role","user","content",v)))).append("\n");Files.writeString(f,b.toString());}
+  DashDemo.seed(home);Path dir=home.resolve(".loop");Files.createDirectories(dir);
   ChatEngine e=new ChatEngine();e.scan(ChatEngine.defaults(home,Map.of()),()->false,u->{});LlmPatterns seed=new LlmPatterns(dir);
-  for(var i:Patterns.distinct(e.requests)){String tx=i.request().text();String[] pick=null;for(String[] t:T)for(int k=2;k<t.length;k++)if(tx.startsWith(t[k]))pick=t;seed.descriptions.put(i.id(),new LlmPatterns.Description(pick[0]+" "+tx.split(" ")[0],Patterns.mode(tx),pick[1],pick[0].equals("tests")));}seed.save();
+  for(var i:Patterns.distinct(e.requests)){String tx=i.request().text();String[] pick=null;for(String[] t:T)for(int k=2;k<t.length;k++)if(tx.startsWith(t[k]))pick=t;seed.descriptions.put(i.id(),pick==null?new LlmPatterns.Description("project "+tx.split(" ")[0],Patterns.mode(tx),"Coding",false):new LlmPatterns.Description(pick[0]+" "+tx.split(" ")[0],Patterns.mode(tx),pick[1],pick[0].equals("tests")));}seed.save();
   HttpServer s=HttpServer.create(new InetSocketAddress("localhost",0),0);s.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());s.createContext("/",x->{String body=new String(x.getRequestBody().readAllBytes(),StandardCharsets.UTF_8);String text=reply(body);if(body.contains("previouslyTold"))try{Thread.sleep(3200);}catch(Exception ig){}x.getResponseHeaders().set("Content-Type","text/event-stream");x.sendResponseHeaders(200,0);var out=x.getResponseBody();try{for(int at=0;at<text.length();at+=40){String p=text.substring(at,Math.min(text.length(),at+40));out.write(("data: "+Json.write(Map.of("choices",List.of(Map.of("delta",Map.of("content",p)))))+"\n\n").getBytes(StandardCharsets.UTF_8));out.flush();Thread.sleep(Math.max(40,3500/(text.length()/40+1)));}out.write("data: [DONE]\n\n".getBytes());}catch(Exception ig){}x.close();});s.start();port=s.getAddress().getPort();
   Files.writeString(dir.resolve("settings.properties"),"cross=false\nnotifications=false\nconsent=true\nrememberKey=false\nprovider=OPENAI\nmodel.OPENAI=demo\nendpoint.OPENAI=http\\://localhost\\:"+port+"/v1\n");
   Loop.main(new String[0]);while(Loop.instance==null)Thread.sleep(50);l=Loop.instance;
-  SwingUtilities.invokeAndWait(()->{l.frame.setFocusableWindowState(false);l.frame.setLocation(-4000,-4000);l.frame.setSize(1000,680);l.workspace.key.setText("demo");});Thread.sleep(600);source=l.frame;
-  caption="One click. No setup screens.";hold(1300);caption="Your chats become patterns, live";SwingUtilities.invokeLater(l.workspace.analyze::doClick);
+  SwingUtilities.invokeAndWait(()->{l.frame.setFocusableWindowState(false);l.frame.setLocation(-4000,-4000);l.frame.setSize(1320,880);l.workspace.key.setText("demo");});Thread.sleep(600);source=l.frame;
+  Thread.sleep(4000);caption="Every agent, every project, one dashboard";hold(2600);png("dashboard",l.frame,docs);
+  SwingUtilities.invokeAndWait(()->{JTextArea t=stripe(l.dashboard);t.dispatchEvent(new java.awt.event.MouseEvent(t,java.awt.event.MouseEvent.MOUSE_CLICKED,0,0,5,5,1,false));});Thread.sleep(1500);
+  caption="Click a card to read the whole session";hold(3000);png("session",l.frame,docs);SwingUtilities.invokeAndWait(l.dashboard::closeSide);
+  caption="Then run the feedback loop";SwingUtilities.invokeAndWait(()->l.select("Feedback"));hold(1300);caption="Your chats become patterns, live";SwingUtilities.invokeLater(l.workspace.analyze::doClick);
   Thread.sleep(250);SwingUtilities.invokeAndWait(()->l.select("Patterns"));
   long t0=System.currentTimeMillis();while(l.patterns.llm.saved.isEmpty()&&System.currentTimeMillis()-t0<30000){snap(160);Thread.sleep(140);}
-  SwingUtilities.invokeAndWait(()->l.select("Patterns"));Thread.sleep(700);hold(1500);png("patterns",l.frame,docs);caption="Then honest feedback, item by item";SwingUtilities.invokeAndWait(()->l.select("Home"));
+  SwingUtilities.invokeAndWait(()->l.select("Patterns"));Thread.sleep(700);hold(1500);SwingUtilities.invokeAndWait(()->l.select("Patterns"));Thread.sleep(400);png("patterns",l.frame,docs);caption="Then honest feedback, item by item";SwingUtilities.invokeAndWait(()->l.select("Feedback"));
   t0=System.currentTimeMillis();while(l.busy&&System.currentTimeMillis()-t0<30000){snap(160);Thread.sleep(140);}
   hold(1400);png("feedback",l.frame,docs);
+  if(l.patterns.feedback.isEmpty()){Activity.listen(System.out::println);throw new IllegalStateException("The demo produced no feedback");}
   Insights.Finding f=l.patterns.feedback.get(0);SwingUtilities.invokeLater(()->l.patterns.detail(f));Thread.sleep(500);JDialog d=null;for(Window w:Window.getWindows())if(w instanceof JDialog x&&x.isShowing())d=x;JDialog dd=d;SwingUtilities.invokeAndWait(()->{dd.setFocusableWindowState(false);dd.setLocation(-4000,0);});Thread.sleep(250);
   png("detail",d,docs);caption="What you wrote, and a sharper version";source=d;hold(3600);
   // One exact palette from the real colors, with no dithering, so flat areas stay flat.

@@ -4,6 +4,7 @@ import java.util.*;
 final class FeatureChecks {
     static void check(boolean condition,String message){Checks.check(condition,message);}
     static void run()throws Exception{
+        agentChecks();chatLocationChecks();chatAgreementChecks();
         Object round=Json.parse(Json.write(Map.of("text","quote \" slash \\\n<>&","list",List.of(1,true,"é"))));
         check(Json.text(Json.map(round).get("text")).equals("quote \" slash \\\n<>&"),"JSON round trip");
         for(Models.Provider p:Models.Provider.values()){
@@ -125,5 +126,57 @@ final class FeatureChecks {
             LlmPatterns broken=new LlmPatterns(aiDir);boolean threw=false;try{broken.run((x,y)->"not json",requests,"",(stage,d,t,l)->{});}catch(Exception expected){threw=true;}check(threw,"All batches failing is reported");
         }finally{try(var p=Files.walk(aiDir)){for(Path x:p.sorted(Comparator.reverseOrder()).toList())Files.delete(x);}}
         Path dir=Files.createTempDirectory("loop-insights-");try{Insights.save(dir,List.of(findings.get(0).asRemoved()));var back=Insights.load(dir);check(back.size()==1&&back.get(0).removed()&&back.get(0).actions().size()==1,"Feedback and removal persist");}finally{try(var p=Files.walk(dir)){for(Path x:p.sorted(Comparator.reverseOrder()).toList())Files.delete(x);}}
+    }
+    private static void feed(Agents.Session s,String... lines){for(String l:lines)Agents.apply(s,Json.map(Json.parse(l)));}
+    private static Agents.Session session(String tool){Agents.Session s=new Agents.Session();s.tool=tool;s.id="x";s.path="x";return s;}
+    private static void agentChecks(){
+        String md=Markdown.toHtml("# Plan\n- **a** `x<y`\n- b\n\n```\n<script>\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n![t](https://e.com/i.png) <img src=x>");
+        if(!md.contains("<b>a</b>")||!md.contains("<code>x&lt;y</code>")||!md.contains("&lt;script&gt;")||!md.contains("<td>2</td>")||md.contains("<img")||md.contains("<script"))throw new AssertionError("Markdown: "+md);
+        if(!Markdown.plain("## Done **now** with `code`").equals("Done now with code"))throw new AssertionError("Markdown plain");
+        if(!AgentsPage.transcriptHtml(List.of(new Agents.Event(0,"prompt","hi")),"Pi CLI",false).contains("<b>You</b> &nbsp;</p>"))throw new AssertionError("An unknown time must stay blank");
+        Agents.Session c=session("Claude");
+        feed(c,"{\"type\":\"user\",\"timestamp\":\"2026-01-01T00:00:00Z\",\"cwd\":\"/p\",\"entrypoint\":\"claude-desktop\",\"message\":{\"content\":\"Fix it\"}}",
+            "{\"type\":\"user\",\"timestamp\":\"2026-01-01T00:00:01Z\",\"message\":{\"content\":\"<system-reminder>x</system-reminder>\"}}",
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-01-01T00:01:00Z\",\"message\":{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\"}]}}");
+        check(c.turns.size()==1&&c.turns.get(0).tools==1&&c.pending&&c.surface().equals("Claude Desktop"),"Claude turn, noise, tool, and app");
+        feed(c,"{\"type\":\"assistant\",\"timestamp\":\"2026-01-01T00:02:00Z\",\"message\":{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"**Done**\"}]}}");
+        check(!c.pending&&c.latest.equals("Done"),"Claude turn ends and summary drops markdown");
+        Agents.Session o=session("Codex");
+        feed(o,"{\"type\":\"session_meta\",\"timestamp\":\"2026-01-01T00:00:00Z\",\"payload\":{\"cwd\":\"/p\",\"originator\":\"Codex Desktop\"}}",
+            "{\"type\":\"event_msg\",\"timestamp\":\"2026-01-01T00:00:01Z\",\"payload\":{\"type\":\"task_started\"}}",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-01-01T00:00:02Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Go\"}]}}");
+        check(o.pending&&o.surface().equals("ChatGPT app"),"ChatGPT app turn opens");
+        feed(o,"{\"type\":\"event_msg\",\"timestamp\":\"2026-01-01T00:00:09Z\",\"payload\":{\"type\":\"turn_aborted\"}}");
+        check(!o.pending&&o.turns.get(0).outcome.equals("interrupted"),"Aborted turn recorded");
+        Agents.Session p=session("Pi");
+        feed(p,"{\"type\":\"session\",\"timestamp\":\"2026-01-01T00:00:00Z\",\"cwd\":\"/p\"}","{\"type\":\"message\",\"timestamp\":\"2026-01-01T00:00:01Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Go\"}]}}",
+            "{\"type\":\"message\",\"timestamp\":\"2026-01-01T00:00:02Z\",\"message\":{\"role\":\"assistant\",\"stopReason\":\"error\",\"content\":[]}}");
+        check(p.cwd.equals("/p")&&!p.pending&&p.turns.get(0).outcome.equals("error"),"Pi error recorded");
+        s(o);
+    }
+    private static void s(Agents.Session o){o.cwd="C:\\\\x\\\\Claude-Data\\\\scratch";check(o.chat(),"A scratch folder is a chat, not a project");}
+    static void chatLocationChecks()throws Exception{
+        Path temp=Files.createTempDirectory("rhi-paths");
+        var a=new ChatEngine.Root("Claude",temp.resolve("a"));var b=new ChatEngine.Root("Codex",temp.resolve("b"));var c=new ChatEngine.Root("Pi",temp.resolve("c"));
+        check(ChatEngine.effective(List.of(a,b),List.of(a.path().toString()),List.of(c)).equals(List.of(b,c)),"Path list: removed standard path leaves, added one joins");
+        check(ChatEngine.effective(List.of(a),List.of(),List.of(a)).size()==1,"Path list: no duplicates");
+        check(ChatEngine.toolFor(Path.of("/x/.codex/sessions")).equals("Codex")&&ChatEngine.toolFor(Path.of("/x/.pi/agent/sessions")).equals("Pi")&&ChatEngine.toolFor(Path.of("/x/AppData/Local/Claude-Data")).equals(ChatEngine.DESKTOP),"Path list: tool from the path");
+        Path odd=temp.resolve("odd");Files.createDirectories(odd);Files.writeString(odd.resolve("o.jsonl"),"{\"type\":\"session_meta\",\"payload\":{}}\n");check(ChatEngine.toolFor(odd).equals("Codex"),"Path list: tool from the log");
+        check(Loop.when(System.currentTimeMillis()).startsWith("Today "),"Last interacted reads as today");
+    }
+    static void chatAgreementChecks()throws Exception{
+        Path home=Files.createTempDirectory("rhi-agree");String keep=System.getProperty("user.home");System.setProperty("user.home",home.toString());
+        try{
+            Path p=home.resolve(".claude/projects/-w");Files.createDirectories(p);
+            String ts="\"timestamp\":\"2026-01-01T00:00:00Z\"";
+            for(String id:List.of("one","two","gone"))Files.writeString(p.resolve(id+".jsonl"),"{\"type\":\"user\",\"sessionId\":\""+id+"\",\"cwd\":\"/w\","+ts+",\"message\":{\"role\":\"user\",\"content\":\"hello "+id+"\"}}\n");
+            Files.writeString(p.resolve("tmp.jsonl"),"{\"type\":\"user\",\"sessionId\":\"tmp\",\"cwd\":\"/tmp/x\","+ts+",\"message\":{\"role\":\"user\",\"content\":\"scratch\"}}\n");
+            var roots=ChatEngine.defaults(home,Map.of());Agents agents=new Agents();agents.hide=s->s.id.equals("gone");
+            List<Agents.Session> listed=Agents.chats(agents.refresh(roots));
+            Set<Path> only=new HashSet<>();for(var s:listed)only.add(Path.of(s.path).toAbsolutePath().normalize());
+            ChatEngine e=new ChatEngine();e.only=only;e.scan(roots,()->false,u->{});
+            Set<String> imported=new HashSet<>();for(var r:e.snapshot())imported.add(r.session());Set<String> shown=new HashSet<>();for(var s:listed)shown.add(s.id);
+            check(shown.equals(Set.of("one","two"))&&imported.equals(shown),"Dashboard, Chats, and the import hold the same chats");
+        }finally{System.setProperty("user.home",keep);}
     }
 }

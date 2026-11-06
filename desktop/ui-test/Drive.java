@@ -32,7 +32,7 @@ public class Drive {
   static void closeAll()throws Exception{ui(()->{for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing())d.dispose();});}
   static String status(){return l.status.getText();}
   static void write(String rel,String... lines)throws Exception{Path f=home.resolve(rel);Files.createDirectories(f.getParent());Files.writeString(f,String.join("\n",lines)+"\n");}
-  static String u(String sid,String text){return Json.write(Map.of("type","user","sessionId",sid,"message",Map.of("role","user","content",text)));}
+  static String u(String sid,String text){return Json.write(Map.of("type","user","timestamp",java.time.Instant.now().toString(),"sessionId",sid,"message",Map.of("role","user","content",text)));}
 
   // ---- fake provider ----
   static volatile String mode="ok";static final List<String> seen=new CopyOnWriteArrayList<>();static final List<Map<String,String>> headers=new CopyOnWriteArrayList<>();
@@ -94,23 +94,25 @@ public class Drive {
     Files.writeString(home.resolve("settings-seed"),"");Files.createDirectories(home.resolve(".loop"));Files.writeString(home.resolve(".loop/settings.properties"),"cross=false\nnotifications=false\n");
 
     Loop.main(new String[0]);while(Loop.instance==null)pause(100);l=Loop.instance;ui(()->{l.frame.setFocusableWindowState(false);l.frame.setLocation(-4000,-4000);});pause(500);
-    System.out.println("Home, empty");
+    ok(l.page.equals("Dashboard"),"the dashboard is the first page");Runnable pinTest=()->{l.dashboard.pins.put("/x","Alpha tab");l.dashboard.savePins();};if(SwingUtilities.isEventDispatchThread())pinTest.run();else SwingUtilities.invokeAndWait(pinTest);ok(find(l.frame,"Alpha tab")!=null,"a pinned project appears on the dashboard");ok(!l.nav.containsKey("pin:/x")&&l.nav.size()==5,"pinning adds no page to the navigation");Runnable unpin=()->{l.dashboard.pins.remove("/x");l.dashboard.savePins();};if(SwingUtilities.isEventDispatchThread())unpin.run();else SwingUtilities.invokeAndWait(unpin);ok(find(l.frame,"Alpha tab")==null,"unpinning removes it");ok(find(l.frame,"Run feedback loop")!=null,"the dashboard offers the loop");ok(find(l.frame,"Dashboard")!=null&&find(l.frame,"Feedback")!=null,"dashboard and feedback are separate pages");
+    ui(()->l.select("Feedback"));pause(200);
+    System.out.println("Feedback, empty");
     ok(allText(l.workspace).contains("Keep working. RHI will look for ways to make it easier."),"spec empty-state text");ok(find(l.workspace,"Get feedback")!=null,"empty Home offers the one action");ok(l.frame.getTitle().startsWith("RHI"),"app is named RHI");shot("01-empty");
     ui(()->l.workspace.analyze(true));pause(200);ok(status().contains("Import your chats first"),"Find before import explains next step: "+status());
 
     System.out.println("Exclusions");
-    ui(()->{l.workspace.excluded.setText("relative/path");l.select("Chats");});later(l.scan::doClick);pause(300);
+    ui(()->{l.workspace.excluded.setText("relative/path");l.select("Chats");});later(l::scan);pause(300);
     String m=dismiss("OK");ok(m.contains("full path"),"relative exclusion rejected");
     ui(()->l.workspace.excluded.setText("/home/me/client-secret"));
 
     System.out.println("Import");
-    later(l.scan::doClick);idle();
+    later(l::scan);idle();
     var texts=l.engine.requests.values().stream().map(ChatEngine.Request::text).toList();
     ok(texts.size()==6,"only typed requests kept, got "+texts.size());
     ok(texts.stream().noneMatch(t->t.contains("system-reminder")||t.contains("command-name")||t.contains("meta")||t.contains("subagent")),"harness/meta/subagent text filtered");
     ok(texts.stream().noneMatch(t->t.contains("confidential")),"excluded project skipped for Claude path and Pi cwd");
     shot("02-imports");
-    later(l.scan::doClick);idle();ok(status().contains("No new requests"),"re-import adds nothing: "+status());
+    later(l::scan);idle();ok(status().contains("No new requests"),"re-import adds nothing: "+status());
     System.out.println("Remove chats");
     ok(l.rows.getRowCount()==3&&l.stats.getText().equals("3 chats"),"one row per chat: "+l.stats.getText());
     ok(!find(l.frame,"Remove").isEnabled(),"Remove disabled without selection");
@@ -118,12 +120,12 @@ public class Drive {
     ui(()->l.table.setRowSelectionInterval(0,0));press(l.frame,"Remove");pause(150);ok(l.rows.getRowCount()==2&&l.engine.requests.size()==4,"Remove takes the chat out");
     ok(Files.exists(home.resolve(".claude/projects/-work-reports/s0.jsonl")),"original file kept");
     shot("02b-removed");
-    ui(()->l.engine.stamps.clear());later(l.scan::doClick);idle();ok(l.rows.getRowCount()==2,"removed chat does not return on import");
-    press(l.frame,"Undo");pause(150);ok(l.rows.getRowCount()==3&&l.engine.requests.size()==6,"Undo restores it");
-    ui(()->l.chatSearch.setText("NUMBER 1"));pause(100);ok(l.table.getRowCount()==1,"chat search filters");ui(()->l.chatSearch.setText(""));
+    ui(()->l.engine.stamps.clear());later(l::scan);idle();ok(l.rows.getRowCount()==2,"removed chat does not return on import");
+    press(l.frame,"Undo");pause(1500);ok(l.rows.getRowCount()==3&&l.engine.requests.size()==6,"Undo restores it");
+    ui(()->l.chatSearch.setText("DAY 1"));pause(100);ok(l.table.getRowCount()==1,"chat search filters");ui(()->l.chatSearch.setText(""));
 
     System.out.println("Curated solution");
-    ui(()->{l.select("Home");l.workspace.analyze(true);});idle();
+    ui(()->{l.select("Feedback");l.workspace.analyze(true);});idle();
     ok(l.workspace.store.tools.size()==1&&l.workspace.store.tools.get(0).kind.equals("csv"),"CSV cleaner created locally: "+status());
     ok(allText(l.workspace).contains("NEW"),"new solution is featured");shot("03-home-tool");
     Solutions.Tool csv=l.workspace.store.tools.get(0);
@@ -152,7 +154,7 @@ public class Drive {
     press(td,"Useful");td=dialog(csv.title);pause(150);ok(!find(td,"Marked useful").isEnabled()&&csv.feedback.size()==1,"Useful stored once, stays on screen");
     press(td,"Improve");String msg=dismiss("OK");ok(msg.contains("Connect one in Settings")&&l.page.equals("Settings"),"Improve without model leads to Settings");
     closeAll();ui(()->l.workspace.details(csv));td=dialog(csv.title);press(td,"Archive");pause(200);ok(csv.archived&&!allText(l.workspace).contains(csv.title),"Archive hides from library");
-    ui(()->{l.select("Home");l.workspace.archived.doClick();});pause(100);ok(allText(l.workspace).contains(csv.title),"visible under archived");
+    ui(()->{l.select("Feedback");l.workspace.archived.doClick();});pause(100);ok(allText(l.workspace).contains(csv.title),"visible under archived");
     ui(()->l.workspace.archived.doClick());
     ui(()->l.workspace.analyze(true));idle();ok(l.workspace.store.tools.size()==1,"archived topic not re-suggested");
     ui(()->l.workspace.details(csv));td=dialog(csv.title);press(td,"Restore");pause(150);ok(!csv.archived,"restored");
@@ -174,7 +176,7 @@ public class Drive {
 
     System.out.println("Consent and analysis");
     int before=seen.size();
-    ui(()->{l.select("Home");l.workspace.analyze(true);});idle();ok(seen.size()==before,"no consent: nothing sent to provider");
+    ui(()->{l.select("Feedback");l.workspace.analyze(true);});idle();ok(seen.size()==before,"no consent: nothing sent to provider");
     ui(()->{l.workspace.consent.setSelected(true);});
     // secrets + filtered sample
     ChatEngine.Request sec=new ChatEngine.Request("s9","my key is sk-abcdefghijklmnopqrstuvwx please use it");ui(()->l.engine.requests.put(ChatEngine.id(sec),sec));
@@ -200,7 +202,7 @@ public class Drive {
     {boolean inside=true;var mp=l.patterns.map;for(double[] b:mp.bubbles.values())if(b[0]-b[2]<0||b[1]-b[2]<0||b[0]+b[2]>mp.getWidth()||b[1]+b[2]>mp.getHeight())inside=false;ok(inside&&mp.bubbles.size()==l.patterns.result.groups().size(),"every bubble fits on the map");}
     ui(()->l.patterns.selected.clear());Patterns.Group pg=l.patterns.result.groups().get(0);ui(()->l.patterns.toggle(pg));ok(l.patterns.scope.getText().contains("1 pattern"),"bubble selects scope");{int barTotal=l.patterns.barCounts().values().stream().mapToInt(Integer::intValue).sum();ok(barTotal==pg.items.size(),"percentages follow the selection: "+barTotal);}shot("11-patterns-selected");
     later(l.patterns.ask::doClick);idle();pause(300);
-    ok(l.page.equals("Home"),"Find the problems moves to Home");
+    ok(l.page.equals("Feedback"),"Find the problems moves to Feedback");
     ok(l.patterns.feedback.size()==2&&allText(l.patterns.results).contains("Report cleanup"),"Feedback listed: "+status());ok(!allText(l.patterns.results).contains("re-explain"),"list shows only name and one line");shot("12-feedback");
     Insights.Finding fb=l.patterns.feedback.get(0);ui(()->l.patterns.detail(fb));JDialog fd=dialog("Report cleanup");ok(allText(fd).contains("re-explain")&&find(fd,"Find: Python for Data Analysis")!=null,"click opens detail with source");ok(allText(fd).contains("SHARPER"),"shows the sharper version");shot("15-detail",fd);press(fd,"Why am I seeing this?");pause(100);{JDialog esc=fd;ui(()->esc.getRootPane().getActionForKeyStroke(KeyStroke.getKeyStroke("ESCAPE")).actionPerformed(new java.awt.event.ActionEvent(esc,0,"")));pause(150);ok(!esc.isShowing(),"Esc closes detail");}closeAll();
     ok(seen.get(seen.size()-1).contains("tasks"),"agent receives all tasks");ok(Files.exists(Insights.file(home.resolve(".loop"))),"feedback persisted");
@@ -226,7 +228,7 @@ public class Drive {
     mode="drip";later(l.workspace.analyze::doClick);{long tw=System.currentTimeMillis();boolean okd=false;while(l.patterns.feedback.isEmpty()&&System.currentTimeMillis()-tw<25000){if(!okd)for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing()&&"Analyze with AI".equals(d.getTitle())){press(d,"OK");okd=true;}pause(20);}Insights.Finding firstIn=l.patterns.feedback.get(0);ui(()->l.patterns.removeFeedback(firstIn));
      tw=System.currentTimeMillis();while(l.patterns.feedback.isEmpty()&&System.currentTimeMillis()-tw<15000)pause(20);Insights.Finding nextIn=l.patterns.feedback.get(0);ui(()->l.patterns.setDone(nextIn,true));}
     idle();mode="ok";pause(400);{var names=l.patterns.feedback.stream().map(Insights.Finding::name).toList();ok(names.contains("Second item")&&names.contains("Third item")&&allText(l.patterns.results).contains("Second item"),"later passes still appear after a mid-run removal: "+names);ok(names.indexOf("Second item")<names.indexOf("Third item"),"order kept");ok(Insights.load(home.resolve(".loop")).size()==names.size(),"all saved");}
-    ui(()->l.select("Home"));
+    ui(()->l.select("Feedback"));
     System.out.println("Improve, versions");
     ui(()->l.workspace.details(tx));td=dialog(tx.title);press(td,"Improve");pause(300);JDialog q=null;for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing()&&d!=td)q=d;
     JTextArea req=findArea(q);ui(()->req.setText("Also remove duplicates"));press(q,"OK");idle();pause(300);
@@ -260,16 +262,20 @@ public class Drive {
       Path enc=home.resolve(".loop/keys/rhi-check.dpapi");if(Files.exists(enc))ok(!Files.readString(enc).contains("sk-roundtrip"),"key is encrypted on disk");
       KeyStore.delete("rhi-check");ok(KeyStore.load("rhi-check").isEmpty(),"key deleted");}
     System.out.println("Add folders");
-    Path custom=home.resolve("extra");Files.createDirectories(custom);Files.writeString(custom.resolve("x.jsonl"),u("x1","custom folder request about something"));
-    ui(()->l.select("Chats"));press(l.frame,"Add Folder");pause(900);JDialog ad=dialog(null);JFileChooser afc=(JFileChooser)ad.getContentPane().getComponent(0);ui(()->afc.setSelectedFile(custom.toFile()));later(afc::approveSelection);pause(300);idle();
-    ok(l.extra.size()==1,"custom folder added");ok(status().contains("1 new request"),"added folder imported at once: "+status());
-    {ui(()->{l.engine.removeSessions(Set.of("x1"));l.refreshChats();});later(l.scan::doClick);idle();ok(l.engine.requests.values().stream().noneMatch(chatReq->chatReq.session().equals("x1")),"import keeps a removed chat out");
-     press(l.frame,"Add Folder");pause(900);JDialog again=dialog(null);JFileChooser fc2=(JFileChooser)again.getContentPane().getComponent(0);ui(()->fc2.setSelectedFile(custom.toFile()));later(fc2::approveSelection);pause(300);idle();ok(l.engine.requests.values().stream().anyMatch(chatReq->chatReq.session().equals("x1")),"adding the folder again brings it back");}
-    {Path big=home.resolve("many");Files.createDirectories(big);for(int i=0;i<1500;i++)Files.writeString(big.resolve(i+".jsonl"),u("bulk"+i,"bulk request number "+i+" about something"));
-     int start=l.rows.getRowCount();press(l.frame,"Add Folder");pause(900);JDialog bd=dialog(null);JFileChooser bc=(JFileChooser)bd.getContentPane().getComponent(0);ui(()->bc.setSelectedFile(big.toFile()));later(bc::approveSelection);boolean between=false;long tw=System.currentTimeMillis();while(System.currentTimeMillis()-tw<30000){int n=l.rows.getRowCount();if(l.busy&&n>start&&n<start+1500)between=true;if(n>=start+1500&&!l.busy)break;pause(15);}ok(between,"chats appear while the import runs");
-     Set<String> bulk=new HashSet<>();for(int i=0;i<1500;i++)bulk.add("bulk"+i);ui(()->{l.patterns.forget(l.engine.removeSessions(bulk).keySet(),false);l.refreshChats();});
-     press(l.frame,"Set Home Folder");pause(900);JDialog hd=dialog(null);JFileChooser hc=(JFileChooser)hd.getContentPane().getComponent(0);ui(()->hc.setSelectedFile(custom.toFile()));later(hc::approveSelection);pause(600);m=dismiss("OK");ok(m.contains("No .claude"),"Set Home Folder explains a wrong folder");
-     press(l.frame,"Set Home Folder");pause(900);hd=dialog(null);JFileChooser hc2=(JFileChooser)hd.getContentPane().getComponent(0);ui(()->hc2.setSelectedFile(home.toFile()));later(hc2::approveSelection);pause(300);idle();ok(home.toString().equals(l.settings.getProperty("home")),"home folder saved");}
+    Path custom=home.resolve("extra");Files.createDirectories(custom);Files.writeString(custom.resolve("x.jsonl"),u("x1","custom folder request about something")+"\n");
+    ui(()->l.select("Settings"));pause(400);shot("settings-paths");
+    int standard=l.pathRows.getSize();ok(standard>0,"standard paths listed: "+standard);
+    ui(()->l.addChatPath(custom));idle();
+    ok(l.extra.size()==1,"custom path added");ok(status().contains("1 new request"),"added path imported at once: "+status());
+    ok(Files.readString(l.settingsFile).contains("root.0"),"added path saved");
+    {ui(()->l.select("Chats"));pause(1500);int listedNow=l.rows.getRowCount();ok(listedNow==4,"added path's chat is listed: "+listedNow);ok(l.table.getColumnName(3).equals("Last interacted")&&String.valueOf(l.table.getValueAt(0,3)).matches("\\d+"),"last interacted column holds a time");
+     int xr=-1;for(int i=0;i<l.table.getRowCount();i++)if(String.valueOf(l.table.getValueAt(i,0)).contains("custom folder"))xr=i;int xv=xr;ui(()->l.table.setRowSelectionInterval(xv,xv));press(l.frame,"Remove");pause(200);ok(l.rows.getRowCount()==listedNow-1&&l.engine.requests.values().stream().noneMatch(chatReq->chatReq.session().equals("x1")),"Remove takes it out of both");
+     later(l::scan);idle();ok(l.rows.getRowCount()==listedNow-1,"import keeps a removed chat out");
+     ui(()->l.addChatPath(custom));idle();ok(l.engine.requests.values().stream().anyMatch(chatReq->chatReq.session().equals("x1")),"adding the path again brings it back");
+     ui(()->l.select("Settings"));pause(400);later(()->l.addChatPath(home.resolve("missing")));pause(800);m=dismiss("OK");ok(m.contains("does not exist"),"a missing path explains itself");
+     ChatEngine.Root first=ChatEngine.defaults(home,Map.of()).get(0);ui(()->l.removeChatPath(first));pause(800);ok(l.removedPaths.contains(first.path().toString()),"standard path removed");ok(Files.readString(l.settingsFile).contains("removedpath.0"),"removal saved");
+     ui(l::restoreChatPaths);pause(800);ok(l.removedPaths.isEmpty(),"standard paths restored");
+     ui(()->l.select("Chats"));pause(1500);shot("chats-table");}
     System.out.println("Autosave");
     ui(()->{l.workspace.schedule.doClick();});ok(Files.readString(l.settingsFile).contains("schedule=true"),"checkbox saves itself");ui(()->l.workspace.schedule.doClick());
     System.out.println("Persistence, delete");

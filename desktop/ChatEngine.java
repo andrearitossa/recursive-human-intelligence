@@ -23,7 +23,7 @@ final class ChatEngine {
     void restoreSessions(Map<String,Request> taken){for(Request r:taken.values())removed.remove(r.session());requests.putAll(taken);}
     /** Adding a folder again is the way back: its removed chats return on the next scan. */
     final Set<Path> readding=new HashSet<>();
-    void readd(Path folder){Path f=folder.toAbsolutePath().normalize();readding.add(f);stamps.keySet().removeIf(p->p.startsWith(f));}
+    void readd(Path folder){Path f=folder.toAbsolutePath().normalize();readding.add(f);removed.removeIf(m->m.startsWith("file:")&&Path.of(m.substring(5)).startsWith(f));stamps.keySet().removeIf(p->p.startsWith(f));}
     private boolean put(Request r){synchronized(requests){return requests.putIfAbsent(id(r),r)==null;}}
     /** A safe copy for the screen while an import is adding to the real map. */
     List<Request> snapshot(){synchronized(requests){return new ArrayList<>(requests.values());}}
@@ -62,6 +62,32 @@ final class ChatEngine {
         }while(!text.equals(previous));
         return INJECTED.matcher(text).matches()?"":text.strip();
     }
+    /** Claude Desktop keeps titles and archive flags here, not transcripts. */
+    static final String DESKTOP="Claude Desktop";
+    /** Which transcript format a folder holds, from its name or else its first log. */
+    static String toolFor(Path folder){
+        String p=folder.toString().replace('\\','/').toLowerCase(Locale.ROOT);
+        if(p.contains("/claude-data"))return DESKTOP;if(p.contains("/.codex"))return "Codex";if(p.contains("/.claude"))return "Claude";if(p.contains("/.pi/"))return "Pi";
+        try(var walk=Files.walk(folder,6)){
+            Path log=walk.filter(f->f.toString().endsWith(".jsonl")).findFirst().orElse(null);
+            if(log!=null)try(BufferedReader in=Files.newBufferedReader(log,StandardCharsets.UTF_8)){String head=in.readLine();if(head!=null){if(head.contains("\"session_meta\"")||head.contains("\"response_item\""))return "Codex";if(head.startsWith("{\"type\":\"session\""))return "Pi";}}
+        }catch(IOException|RuntimeException ignored){}
+        return "Claude";
+    }
+    /** What the user's list holds: the standard locations they kept, then the ones they added. */
+    static List<Root> effective(List<Root> standard,Collection<String> removedPaths,List<Root> added){
+        Set<Path> off=new HashSet<>();for(String p:removedPaths)off.add(Path.of(p).toAbsolutePath().normalize());
+        List<Root> out=new ArrayList<>();for(Root r:standard)if(!off.contains(r.path().toAbsolutePath().normalize()))out.add(r);
+        out.addAll(added);return unique(out);
+    }
+    /** The sessions a transcript contributes to the history, so removing a chat can name them. */
+    static Set<String> sessionsIn(Path file){
+        Set<String> out=new HashSet<>();
+        try(BufferedReader in=new BufferedReader(new InputStreamReader(Files.newInputStream(file),StandardCharsets.UTF_8))){String line;while((line=in.readLine())!=null){if(!line.contains("\"user\""))continue;try{Request r=extract(line,file.toAbsolutePath().normalize().toString());if(r!=null)out.add(r.session());}catch(RuntimeException ignored){}}}catch(IOException ignored){}
+        return out;
+    }
+    /** When set, only these transcripts are imported: exactly the chats the Dashboard lists. */
+    volatile Set<Path> only;
     static List<Root> defaults(Path home, Map<String,String> env) {
         List<Root> roots=new ArrayList<>(); addHome(roots,home);
         addEnv(roots,env,"CODEX_HOME","Codex","sessions");
@@ -118,6 +144,7 @@ final class ChatEngine {
                     if(isExcluded(file.toString(),null,excluded))return FileVisitResult.CONTINUE;
                     if(!attrs.isRegularFile()||!file.toString().toLowerCase(Locale.ROOT).endsWith(".jsonl"))return FileVisitResult.CONTINUE;
                     if(!seenFiles.add(file.toAbsolutePath().normalize()))return FileVisitResult.CONTINUE;
+                    if(only!=null&&!only.contains(file.toAbsolutePath().normalize()))return FileVisitResult.CONTINUE;
                     String folder=file.getParent().toString(),key=root.tool()+"\0"+folder;
                     Folder old=folders.getOrDefault(key,new Folder(root.tool(),folder,0,0,0));
                     boolean chat=false;int added=0,skipped=0;
